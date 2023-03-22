@@ -21,8 +21,8 @@ impl<'a> HuffmanNode<'a> {
 
     fn insert(self:Box<Self>,
                     word:&'a [u8],
-                    lbits: &mut Bits,
-                    rbits: &mut Bits,
+                    mut lbits: Bits,
+                    mut rbits: Bits,
                     dic:&'a mut HashMap<&'a [u8],Bits>) -> Result<Box<Self>,WriteError> {
 
         match *self {
@@ -140,12 +140,18 @@ impl<'a> HuffmanTree<'a> {
             let root = self.root.take();
 
             if let Some(r) = root {
-                let mut lbits = Bits::new();
-                let mut rbits = Bits::new();
+                let lbits = Bits::new();
+                let rbits = Bits::new();
 
-                self.root = Some(r.insert(word,&mut lbits,&mut rbits,&mut self.dic)?);
+                self.root = Some(r.insert(word,lbits,rbits,&mut self.dic)?);
             } else {
                 self.root = Some(Box::new(HuffmanNode::new(word)));
+
+                let mut bits = Bits::new();
+
+                bits.push_bit(false);
+
+                self.dic.insert(word,bits);
             }
         }
 
@@ -160,6 +166,9 @@ impl<'a> HuffmanTree<'a> {
         }
     }
 
-    //pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:&'a [u8]) -> Result<(),WriteError> where W: Write {
-    //}
+    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:&'a [u8]) -> Result<(),WriteError> where W: Write {
+        self.dic.get(word)
+            .ok_or(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary.")))
+            .and_then(|bits | bits.write(writer))
+    }
 }

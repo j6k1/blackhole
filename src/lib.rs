@@ -42,8 +42,12 @@ impl Word {
         self.positions.contains(&position)
     }
 
+    pub fn size(&self) -> usize {
+        self.word.len() + self.count
+    }
+
     pub fn score(&self) -> u128 {
-        (self.word.len() as u128 + self.count as u128) * self.full_size as u128 / (self.word.len() * self.count) as u128
+        (self.size() as u128) * self.full_size as u128 / (self.word.len() * self.count) as u128
     }
 }
 impl Ord for Word {
@@ -113,7 +117,9 @@ impl BlackHole {
                                 data[next] == data[r]
                             }).map(|&(l,r)| (l,r+1)).collect::<Vec<(usize,usize)>>();
 
-                            acc.insert(data[l..next].to_vec(),next_list);
+                            if next_list.len() > 1 && next_list.len() + next - l + 1 <= list.len() + next - l {
+                                acc.insert(data[l..(next+1)].to_vec(), next_list);
+                            }
 
                             acc
                         });

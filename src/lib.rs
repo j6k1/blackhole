@@ -183,17 +183,17 @@ impl BlackHole {
         let dic_size = dic.len() - 1;
 
         if dic_size <= 1 << 6 {
-            writer.write(0b00u8 << 6 | dic_size as u8)?;
+            writer.write(0b00u8 << 6 | dic_size as u8 & 0b111111)?;
         } else if dic_size <= 1 << 14 {
-            writer.write(0b01u8 << 6 | (dic_size >> 8) as u8)?;
+            writer.write(0b01u8 << 6 | (dic_size >> 8) as u8 & 0b111111)?;
             writer.write(dic_size as u8 & 0xFFu8)?;
         } else if dic_size <= 1 << 30 {
-            writer.write(0b10u8 << 6 | ((dic_size >> 24) as u8))?;
+            writer.write(0b10u8 << 6 | ((dic_size >> 24) as u8 & 0b111111))?;
             writer.write((dic_size >> 16) as u8 & 0xFFu8)?;
             writer.write((dic_size >> 8) as u8 & 0xFFu8)?;
             writer.write(dic_size as u8 & 0xFFu8)?;
         } else {
-            writer.write(0b11u8 << 6 | ((dic_size >> 56) as u8))?;
+            writer.write(0b11u8 << 6 | ((dic_size >> 56) as u8) & 0b111111)?;
             writer.write((dic_size >> 48) as u8 & 0xFFu8)?;
             writer.write((dic_size >> 40) as u8 & 0xFFu8)?;
             writer.write((dic_size >> 32) as u8 & 0xFFu8)?;
@@ -204,17 +204,17 @@ impl BlackHole {
             let word_size = word.len();
 
             if bits.len() <= 1 << 6 {
-                writer.write(0b00u8 << 6 | (word_size as u8))?;
+                writer.write(0b00u8 << 6 | (word_size as u8) & 0b111111)?;
             } else if dic_size <= 1 << 14 {
-                writer.write(0b01u8 << 6 | ((word_size >> 8) as u8))?;
+                writer.write(0b01u8 << 6 | ((word_size >> 8) as u8 & 0b111111))?;
                 writer.write(word_size as u8 & 0xFFu8)?;
             } else if dic_size <= 1 << 30 {
-                writer.write(0b10u8 << 6 | ((word_size >> 24) as u8))?;
+                writer.write(0b10u8 << 6 | ((word_size >> 24) as u8 & 0b111111))?;
                 writer.write((word_size >> 16) as u8 & 0xFFu8)?;
                 writer.write((word_size >> 8) as u8 & 0xFFu8)?;
                 writer.write(word_size as u8 & 0xFFu8)?;
             } else {
-                writer.write(0b11u8 << 6 | ((word_size >> 56) as u8))?;
+                writer.write(0b11u8 << 6 | ((word_size >> 56) as u8 & 0b111111))?;
                 writer.write((word_size >> 48) as u8 & 0xFFu8)?;
                 writer.write((word_size >> 40) as u8 & 0xFFu8)?;
                 writer.write((word_size >> 32) as u8 & 0xFFu8)?;

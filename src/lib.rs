@@ -224,6 +224,8 @@ impl BlackHole {
             writer.write_bytes(word.clone())?;
         }
 
+        writer.write_u64(size as u64)?;
+
         self.complete_compression(writer,seq,&mut huffman_tree)
     }
 }

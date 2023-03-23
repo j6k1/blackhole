@@ -93,6 +93,16 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
         Ok((self.read_u32()? as u64) << 32 | self.read_u32()? as u64)
     }
 
+    pub fn read_until(&mut self,size:usize) -> Result<Vec<u8>,ReadError> {
+        let mut r = Vec::with_capacity(size);
+
+        for _ in 0..size {
+            r.push(self.read_u8()?.ok_or(ReadError::UnexpectedEofError)?);
+        }
+
+        Ok(r)
+    }
+
     pub fn read_u8_from_bits(&mut self) -> Result<u8,ReadError> {
         self.get_bits_from_lsb(8)
     }

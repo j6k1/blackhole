@@ -201,17 +201,26 @@ impl BlackHole {
         }
 
         for (word,bits) in dic {
-            if bits.len() <= 1 << 7 {
-                writer.write(0b0u8 << 7 | (bits.len() as u8 - 1))?;
-            } else if dic_size <= 1 << 15 {
-                writer.write(0b01u8 << 7 | ((bits.len() >> 8) as u8 - 1))?;
-                writer.write(dic_size as u8 & 0xFFu8)?;
+            let word_size = word.len();
+
+            if bits.len() <= 1 << 6 {
+                writer.write(0b00u8 << 6 | (word_size as u8))?;
+            } else if dic_size <= 1 << 14 {
+                writer.write(0b01u8 << 6 | ((word_size >> 8) as u8))?;
+                writer.write(word_size as u8 & 0xFFu8)?;
+            } else if dic_size <= 1 << 30 {
+                writer.write(0b10u8 << 6 | ((word_size >> 24) as u8))?;
+                writer.write((word_size >> 16) as u8 & 0xFFu8)?;
+                writer.write((word_size >> 8) as u8 & 0xFFu8)?;
+                writer.write(word_size as u8 & 0xFFu8)?;
             } else {
-                return Err(CompressionError::InvalidState(String::from("The dictionary is too large.")))
+                writer.write(0b11u8 << 6 | ((word_size >> 56) as u8))?;
+                writer.write((word_size >> 48) as u8 & 0xFFu8)?;
+                writer.write((word_size >> 40) as u8 & 0xFFu8)?;
+                writer.write((word_size >> 32) as u8 & 0xFFu8)?;
+                writer.write_u32((word_size >> 32) as u32)?;
             }
 
-            bits.write(writer)?;
-            writer.pad_zeros()?;
             writer.write_bytes(word.clone())?;
         }
 

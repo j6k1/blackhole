@@ -70,4 +70,45 @@ impl From<io::Error> for WriteError {
         WriteError::IOError(e)
     }
 }
+#[derive(Debug)]
+pub enum CompressionError {
+    InvalidState(String),
+    ReadError(ReadError),
+    WriteError(WriteError)
+}
+impl fmt::Display for CompressionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CompressionError::InvalidState(ref s) => write!(f, "Invalid State. ({})", s),
+            CompressionError::ReadError(ref e) => write!(f, "Read error ({})", e),
+            CompressionError::WriteError(ref e) => write!(f, "Write error ({})", e)
+        }
+    }
+}
+impl error::Error for CompressionError {
+    fn description(&self) -> &str {
+        match *self {
+            CompressionError::InvalidState(_) => "Invalid State.",
+            CompressionError::ReadError(_) => "Read error.",
+            CompressionError::WriteError(_) => "Write error."
+        }
+    }
 
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match *self {
+            CompressionError::InvalidState(_) => None,
+            CompressionError::ReadError(ref e) => Some(e),
+            CompressionError::WriteError(ref e) => Some(e)
+        }
+    }
+}
+impl From<ReadError> for CompressionError {
+    fn from(e: ReadError) -> Self {
+        CompressionError::ReadError(e)
+    }
+}
+impl From<WriteError> for CompressionError {
+    fn from(e: WriteError) -> Self {
+        CompressionError::WriteError(e)
+    }
+}

@@ -3,35 +3,42 @@ use std::io::{Read, Write};
 use crate::error::{ReadError, WriteError};
 use crate::stream::{StreamReader, StreamWriter};
 
-pub enum HuffmanNode<'a> {
+pub enum HuffmanNode {
     Node {
-        left: Box<HuffmanNode<'a>>,
-        right: Box<HuffmanNode<'a>>
+        left: Box<HuffmanNode>,
+        right: Box<HuffmanNode>
     },
     Leaf {
-        word: &'a [u8]
+        word: Vec<u8>
     }
 }
-impl<'a> HuffmanNode<'a> {
-    pub fn new(word:&'a [u8]) -> HuffmanNode<'a> {
+impl HuffmanNode {
+    pub fn new(word:Vec<u8>) -> HuffmanNode {
         HuffmanNode::Leaf {
             word: word
         }
     }
 
     fn insert(self:Box<Self>,
-                    word:&'a [u8],
+                    word:Vec<u8>,
                     mut lbits: Bits,
                     mut rbits: Bits,
-                    dic:&'a mut HashMap<&'a [u8],Bits>) -> Result<Box<Self>,WriteError> {
+                    dic:&mut HashMap<Vec<u8>,Bits>) -> Result<Box<Self>,WriteError> {
 
         match *self {
-            HuffmanNode::Leaf { word: w} => {
+            HuffmanNode::Leaf { word: ref w} => {
                 lbits.push_bit(false);
                 rbits.push_bit(true);
 
-                dic.insert(w,lbits.clone());
-                dic.insert(word, rbits.clone());
+                let w = w.clone();
+
+                {
+                    let w = w.clone();
+                    let word = word.clone();
+
+                    dic.insert(w, lbits.clone());
+                    dic.insert(word, rbits.clone());
+                }
 
                 Ok(Box::new(HuffmanNode::Node {
                     left: Box::new(HuffmanNode::new(w)),
@@ -53,9 +60,9 @@ impl<'a> HuffmanNode<'a> {
         }
     }
 
-    fn find_word<'b,R>(&self,reader:&'b mut StreamReader<'b,R>) -> Result<&'a [u8],ReadError> where R: Read {
+    fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&[u8],ReadError> where R: Read {
         match self {
-            &HuffmanNode::Leaf { word } => {
+            &HuffmanNode::Leaf { ref word } => {
                 Ok(word)
             },
             &HuffmanNode::Node { ref left, ref right } => {
@@ -123,20 +130,20 @@ impl Bits {
         Ok(())
     }
 }
-pub struct HuffmanTree<'a> {
-    root:Option<Box<HuffmanNode<'a>>>,
-    dic:HashMap<&'a [u8],Bits>
+pub struct HuffmanTree {
+    root:Option<Box<HuffmanNode>>,
+    dic:HashMap<Vec<u8>,Bits>
 }
-impl<'a> HuffmanTree<'a> {
-    pub fn new() -> HuffmanTree<'a> {
+impl HuffmanTree {
+    pub fn new() -> HuffmanTree {
         HuffmanTree {
             root: None,
             dic: HashMap::new()
         }
     }
 
-    pub fn insert(&'a mut self, word: &'a [u8]) -> Result<(),WriteError> {
-        if !self.dic.contains_key(word) {
+    pub fn insert(&mut self, word: Vec<u8>) -> Result<(),WriteError> {
+        if !self.dic.contains_key(&word) {
             let root = self.root.take();
 
             if let Some(r) = root {
@@ -145,7 +152,7 @@ impl<'a> HuffmanTree<'a> {
 
                 self.root = Some(r.insert(word,lbits,rbits,&mut self.dic)?);
             } else {
-                self.root = Some(Box::new(HuffmanNode::new(word)));
+                self.root = Some(Box::new(HuffmanNode::new(word.clone())));
 
                 let mut bits = Bits::new();
 
@@ -158,7 +165,7 @@ impl<'a> HuffmanTree<'a> {
         Ok(())
     }
 
-    pub fn find_word<'b,R>(&'a self,reader:&'b mut StreamReader<'b,R>) -> Result<&'a [u8],ReadError> where R: Read {
+    pub fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&[u8],ReadError> where R: Read {
         if let Some(root) = &self.root {
             root.find_word(reader)
         } else {
@@ -166,8 +173,8 @@ impl<'a> HuffmanTree<'a> {
         }
     }
 
-    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:&'a [u8]) -> Result<(),WriteError> where W: Write {
-        self.dic.get(word)
+    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:Vec<u8>) -> Result<(),WriteError> where W: Write {
+        self.dic.get(&word)
             .ok_or(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary.")))
             .and_then(|bits | bits.write(writer))
     }

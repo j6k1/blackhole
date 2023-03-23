@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::Write;
 use std::io::Read;
-use crate::error::ReadError;
-use crate::stream::StreamReader;
+use crate::error::{CompressionError};
+use crate::huffman::HuffmanTree;
+use crate::stream::{StreamReader, StreamWriter};
 
 pub mod error;
 pub mod stream;
@@ -73,7 +75,7 @@ pub struct BlackHole {
 }
 impl BlackHole {
     pub fn analysis<'a,'b,R>(&self,reader:&'a mut StreamReader<'b,R>)
-        -> Result<BTreeSet<Word>,ReadError> where R: Read {
+        -> Result<(BTreeSet<Word>,usize),CompressionError> where R: Read + 'b {
 
         let mut data = Vec::new();
         let mut words = BTreeSet::new();
@@ -97,11 +99,7 @@ impl BlackHole {
         });
 
         for (word,list) in dic.iter() {
-            let len = data.len();
-
-            for &(l,r) in list.iter() {
-                words.insert(Word::new(word.clone(), &list, data.len()));
-            }
+            words.insert(Word::new(word.clone(), &list, data.len()));
         }
 
         while dic.len() > 0 {
@@ -135,6 +133,51 @@ impl BlackHole {
             words = w;
         }
 
-        Ok(words)
+        Ok((words,data.len()))
+    }
+
+    pub fn build_words_and_tree<'a,'b>(&mut self,words:&'a BTreeSet<Word>,size:usize,huffman_tree:&'b mut HuffmanTree)
+        -> Result<Vec<Vec<u8>>,CompressionError> where 'a: 'b {
+        let mut seq = Vec::new();
+
+        let mut p = 0;
+
+        'outer: while p < size {
+            for w in words.iter() {
+                if w.positions.contains(&p) {
+                    huffman_tree.insert(w.word.clone())?;
+                    seq.push(w.word.clone());
+                    p +=  w.word.len();
+
+                    continue 'outer;
+                }
+            }
+
+            return Err(CompressionError::InvalidState(String::from("The word for the relevant position was not found in the dictionary.")));
+        }
+
+        Ok(seq)
+    }
+
+    pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,words:Vec<Vec<u8>>,huffman_tree:&mut HuffmanTree)
+        -> Result<(),CompressionError> where W: Write {
+        for w in words {
+            huffman_tree.write(writer,w)?;
+        }
+
+        writer.flush()?;
+
+        Ok(())
+    }
+
+    pub fn compression<W,R>(&mut self,reader:&mut StreamReader<'_,R>,writer:&mut StreamWriter<'_,W>)
+        -> Result<(),CompressionError> where W: Write, R: Read {
+        let (words,size) = self.analysis(reader)?;
+
+        let mut huffman_tree = HuffmanTree::new();
+
+        let seq = self.build_words_and_tree(&words,size,&mut huffman_tree)?;
+
+        self.complete_compression(writer,seq,&mut huffman_tree)
     }
 }

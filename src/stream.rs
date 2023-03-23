@@ -92,12 +92,24 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
     pub fn read_u64(&mut self) -> Result<u64,ReadError> {
         Ok((self.read_u32()? as u64) << 32 | self.read_u32()? as u64)
     }
+
+    pub fn read_u8_from_bits(&mut self) -> Result<u8,ReadError> {
+        self.get_bits_from_lsb(8)
+    }
+
+    pub fn skip_bits(&mut self,count:usize) -> Result<(),ReadError> {
+        self.current_index += count / 8;
+        self.current_bits += count % 8;
+
+        Ok(())
+    }
 }
 pub struct StreamWriter<'a,W> where W: Write +'a {
     writer:&'a mut W,
     buf: [u8; 256],
     current_index:usize,
-    current_bits:usize
+    current_bits:usize,
+    written_size:usize
 }
 impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
     pub fn new(writer:&'a mut W) -> StreamWriter<'a,W> {
@@ -105,20 +117,29 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
             writer:writer,
             buf: [0;256],
             current_index:0,
-            current_bits:0
+            current_bits:0,
+            written_size:0
         }
     }
 
-    fn flush(&mut self) -> Result<(),WriteError> {
+    pub fn flush(&mut self) -> Result<(),WriteError> {
         let mut slice = &mut self.buf[0..self.current_index];
         let mut start_index = 0;
 
-        while start_index < self.current_index {
+        let current_index = if self.current_bits == 0 {
+            self.current_index
+        } else {
+            self.current_index + 1
+        };
+
+        while start_index < current_index {
             let size = self.writer.write(&mut slice)?;
 
             if size == 0 {
                 return Err(WriteError::InvalidState(String::from("An error occurred in writing data.")))
             }
+
+            self.written_size += size;
 
             start_index += size;
 
@@ -126,6 +147,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         }
 
         self.current_index = 0;
+        self.current_bits = 0;
 
         Ok(())
     }
@@ -185,5 +207,30 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         self.write_u32((value & 0xFFFFFFFF) as u32)?;
 
         Ok(())
+    }
+
+    pub fn write_u8_to_bits(&mut self,value:u8) -> Result<(),WriteError> {
+        for i in (0..8).rev() {
+            if value & (1u8 << i) != 0 {
+                self.write_bit(true)?;
+            } else {
+                self.write_bit(false)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn pad_zeros(&mut self) -> Result<(),WriteError> {
+        if self.current_bits > 0 {
+            self.current_bits = 0;
+            self.current_index += 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn written_size(&self) -> usize {
+        self.written_size
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap};
+use std::collections::{BTreeMap};
 use std::io::{Read, Write};
 use crate::error::{ReadError, WriteError};
 use crate::stream::{StreamReader, StreamWriter};
@@ -23,7 +23,7 @@ impl HuffmanNode {
                     word:Vec<u8>,
                     mut lbits: Bits,
                     mut rbits: Bits,
-                    dic:&mut HashMap<Vec<u8>,Bits>) -> Result<Box<Self>,WriteError> {
+                    dic:&mut BTreeMap<Vec<u8>,Bits>) -> Result<Box<Self>,WriteError> {
 
         match *self {
             HuffmanNode::Leaf { word: ref w} => {
@@ -132,13 +132,13 @@ impl Bits {
 }
 pub struct HuffmanTree {
     root:Option<Box<HuffmanNode>>,
-    dic:HashMap<Vec<u8>,Bits>
+    dic:BTreeMap<Vec<u8>,Bits>
 }
 impl HuffmanTree {
     pub fn new() -> HuffmanTree {
         HuffmanTree {
             root: None,
-            dic: HashMap::new()
+            dic: BTreeMap::new()
         }
     }
 
@@ -177,5 +177,9 @@ impl HuffmanTree {
         self.dic.get(&word)
             .ok_or(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary.")))
             .and_then(|bits | bits.write(writer))
+    }
+
+    pub fn get_dic(&self) -> &BTreeMap<Vec<u8>,Bits> {
+        &self.dic
     }
 }

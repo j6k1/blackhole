@@ -230,6 +230,14 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         Ok(())
     }
 
+    pub fn write_bytes(&mut self,bytes:Vec<u8>) -> Result<(),WriteError> {
+        for b in bytes.into_iter() {
+            self.write(b)?;
+        }
+
+        Ok(())
+    }
+
     pub fn written_size(&self) -> usize {
         self.written_size
     }

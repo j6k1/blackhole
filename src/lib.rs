@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Write;
 use std::io::Read;
-use crate::error::{CompressionError};
+use crate::error::{CompressionError, UnCompressionError};
 use crate::huffman::HuffmanTree;
 use crate::stream::{StreamReader, StreamWriter};
 
@@ -85,7 +85,7 @@ impl BlackHole {
         let mut i = 0;
 
         {
-            while let Some(b) = reader.read_u8()? {
+            while let Some(b) = reader.read_once()? {
                 data.push(b);
                 list.push((i,i+1));
 
@@ -185,40 +185,28 @@ impl BlackHole {
         if dic_size <= 1 << 6 {
             writer.write(0b00u8 << 6 | dic_size as u8 & 0b111111)?;
         } else if dic_size <= 1 << 14 {
-            writer.write(0b01u8 << 6 | (dic_size >> 8) as u8 & 0b111111)?;
-            writer.write(dic_size as u8 & 0xFFu8)?;
+            writer.write_u16(0b01u16 << 14 | (dic_size as u16))?;
         } else if dic_size <= 1 << 30 {
-            writer.write(0b10u8 << 6 | ((dic_size >> 24) as u8 & 0b111111))?;
-            writer.write((dic_size >> 16) as u8 & 0xFFu8)?;
-            writer.write((dic_size >> 8) as u8 & 0xFFu8)?;
-            writer.write(dic_size as u8 & 0xFFu8)?;
+            writer.write_u32(0b10u32 << 30 | (dic_size as u32))?;
+        } else if dic_size <= 1 << 62 {
+            writer.write_u64(0b11u64 << 62 | (dic_size as u64))?;
         } else {
-            writer.write(0b11u8 << 6 | ((dic_size >> 56) as u8) & 0b111111)?;
-            writer.write((dic_size >> 48) as u8 & 0xFFu8)?;
-            writer.write((dic_size >> 40) as u8 & 0xFFu8)?;
-            writer.write((dic_size >> 32) as u8 & 0xFFu8)?;
-            writer.write_u32((dic_size >> 32) as u32)?;
+            return Err(CompressionError::LimitError(String::from("Data size is too large.")))
         }
 
         for (word,bits) in dic {
             let word_size = word.len();
 
-            if bits.len() <= 1 << 6 {
-                writer.write(0b00u8 << 6 | (word_size as u8) & 0b111111)?;
-            } else if dic_size <= 1 << 14 {
-                writer.write(0b01u8 << 6 | ((word_size >> 8) as u8 & 0b111111))?;
-                writer.write(word_size as u8 & 0xFFu8)?;
-            } else if dic_size <= 1 << 30 {
-                writer.write(0b10u8 << 6 | ((word_size >> 24) as u8 & 0b111111))?;
-                writer.write((word_size >> 16) as u8 & 0xFFu8)?;
-                writer.write((word_size >> 8) as u8 & 0xFFu8)?;
-                writer.write(word_size as u8 & 0xFFu8)?;
+            if word_size <= 1 << 6 {
+                writer.write(0b00u8 << 6 | word_size as u8 & 0b111111)?;
+            } else if word_size <= 1 << 14 {
+                writer.write_u16(0b01u16 << 14 | (word_size as u16))?;
+            } else if word_size <= 1 << 30 {
+                writer.write_u32(0b10u32 << 30 | (word_size as u32))?;
+            } else if word_size <= 1 << 62 {
+                writer.write_u64(0b11u64 << 62 | (word_size as u64))?;
             } else {
-                writer.write(0b11u8 << 6 | ((word_size >> 56) as u8 & 0b111111))?;
-                writer.write((word_size >> 48) as u8 & 0xFFu8)?;
-                writer.write((word_size >> 40) as u8 & 0xFFu8)?;
-                writer.write((word_size >> 32) as u8 & 0xFFu8)?;
-                writer.write_u32((word_size >> 32) as u32)?;
+                return Err(CompressionError::LimitError(String::from("Data size is too large.")))
             }
 
             writer.write_bytes(word.clone())?;
@@ -227,5 +215,24 @@ impl BlackHole {
         writer.write_u64(size as u64)?;
 
         self.complete_compression(writer,seq,&mut huffman_tree)
+    }
+
+    pub fn uncompression<R,W>(&mut self,reader:&mut StreamReader<'_,R>,writer:&mut StreamWriter<'_,W>)
+        -> Result<(),UnCompressionError> where R: Read, W: Write {
+        let h = reader.get_bits_from_lsb(2)?;
+
+        let dic_size = if h == 0b00 {
+            reader.get_bits_from_lsb(6)? as usize
+        } else if h == 0b01 {
+            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8)
+        } else if h == 0b10 {
+            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16)
+        } else if h == 0b11 {
+            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16) | ((reader.read_u32()? as usize) << 32)
+        } else {
+            return Err(UnCompressionError::FormatError);
+        };
+
+        Ok(())
     }
 }

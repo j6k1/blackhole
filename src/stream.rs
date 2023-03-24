@@ -35,7 +35,7 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
                 self.get_bit_from_lsb()
             }
         } else {
-            let bit = if self.buf[self.current_index] & (1u8 << (7 - self.current_bits as u8)) == 0 {
+            let bit = if self.buf[self.current_index] & 1u8 << (self.current_bits as u8) == 0 {
                 0
             } else {
                 1
@@ -53,58 +53,66 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
     }
 
     pub fn get_bits_from_lsb(&mut self, size:usize) -> Result<u8,ReadError> {
-        let mut bits = 0;
+        if size > 8 {
+            Err(ReadError::InvalidArgumentError(String::from("The specified read size is too long.")))
+        } else {
+            let mut bits = 0;
 
-        for i in 0..size {
-            bits |= self.get_bit_from_lsb()? << i;
+            for i in 0..size {
+                bits |= self.get_bit_from_lsb()? & 1u8 << i;
+            }
+            Ok(bits)
         }
-        Ok(bits)
     }
 
-    pub fn read_u8(&mut self) -> Result<Option<u8>,ReadError> {
+    pub fn read_once(&mut self) -> Result<Option<u8>,ReadError> {
         if self.buf_size == 0 || self.current_index >= self.buf_size {
             if self.read_next()? == 0 {
                 return Ok(None);
             }
         }
 
-        let r = self.buf[self.current_index];
+        if self.current_bits == 0 {
+            let r = self.buf[self.current_index];
 
-        self.current_index += 1;
+            self.current_index += 1;
 
-        Ok(Some(r))
+            Ok(Some(r))
+        } else {
+            self.get_bits_from_lsb(8).map(|b| Some(b))
+        }
+    }
+
+    pub fn read_u8(&mut self) -> Result<u8,ReadError> {
+        Ok(self.read_once()?.ok_or(ReadError::UnexpectedEofError)?)
     }
 
     pub fn read_u16(&mut self) -> Result<u16,ReadError> {
-        Ok((self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u16) << 8 |
-            self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u16
+        Ok(self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u16 |
+               (self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u16) << 8
         )
     }
 
     pub fn read_u32(&mut self) -> Result<u32,ReadError> {
-        Ok((self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u32) << 24 |
-           (self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u32) << 16 |
-           (self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u32) << 8 |
-            self.read_u8()?.ok_or(ReadError::UnexpectedEofError)? as u32
+        Ok(self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u32 |
+           (self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u32) <<  8 |
+           (self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u32) << 16 |
+           (self.read_once()?.ok_or(ReadError::UnexpectedEofError)? as u32) << 24
         )
     }
 
     pub fn read_u64(&mut self) -> Result<u64,ReadError> {
-        Ok((self.read_u32()? as u64) << 32 | self.read_u32()? as u64)
+        Ok((self.read_u32()? as u64) | (self.read_u32()? as u64) << 32)
     }
 
     pub fn read_until(&mut self,size:usize) -> Result<Vec<u8>,ReadError> {
         let mut r = Vec::with_capacity(size);
 
         for _ in 0..size {
-            r.push(self.read_u8()?.ok_or(ReadError::UnexpectedEofError)?);
+            r.push(self.read_once()?.ok_or(ReadError::UnexpectedEofError)?);
         }
 
         Ok(r)
-    }
-
-    pub fn read_u8_from_bits(&mut self) -> Result<u8,ReadError> {
-        self.get_bits_from_lsb(8)
     }
 
     pub fn skip_bits(&mut self,count:usize) -> Result<(),ReadError> {
@@ -173,7 +181,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
 
             Ok(())
         } else {
-            Err(WriteError::InvalidState(String::from("The current write bit position is not on a byte boundary.")))
+            self.write_u8_to_bits(b)
         }
     }
 
@@ -183,7 +191,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         }
 
         if b {
-            self.buf[self.current_index] = self.buf[self.current_index] | 1u8 << (7 - self.current_bits);
+            self.buf[self.current_index] = self.buf[self.current_index] | (1u8 << self.current_bits);
         }
 
         self.current_bits += 1;
@@ -197,30 +205,30 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
     }
 
     pub fn write_u16(&mut self,value:u16) -> Result<(),WriteError> {
-        self.write(((value >> 8) & 0xFF) as u8)?;
         self.write((value & 0xFF) as u8)?;
+        self.write(((value >> 8) &0xFF) as u8)?;
 
         Ok(())
     }
 
     pub fn write_u32(&mut self,value:u32) -> Result<(),WriteError> {
-        self.write(((value >> 24) & 0xFF) as u8)?;
-        self.write(((value >> 16) & 0xFF) as u8)?;
-        self.write(((value >> 8) & 0xFF) as u8)?;
         self.write((value & 0xFF) as u8)?;
+        self.write(((value >> 8) & 0xFF) as u8)?;
+        self.write(((value >> 16) & 0xFF) as u8)?;
+        self.write(((value >> 24) & 0xFF) as u8)?;
 
         Ok(())
     }
 
     pub fn write_u64(&mut self,value:u64) -> Result<(),WriteError> {
-        self.write_u32(((value >> 32) & 0xFFFFFFFF) as u32)?;
         self.write_u32((value & 0xFFFFFFFF) as u32)?;
+        self.write_u32(((value >> 32) & 0xFFFFFFFF) as u32)?;
 
         Ok(())
     }
 
     pub fn write_u8_to_bits(&mut self,value:u8) -> Result<(),WriteError> {
-        for i in (0..8).rev() {
+        for i in 0..8 {
             if value & (1u8 << i) != 0 {
                 self.write_bit(true)?;
             } else {

@@ -28,14 +28,14 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
     }
     
     pub fn get_bit_from_lsb(&mut self) -> Result<u8,ReadError> {
-        if self.current_index >= self.buf.len() {
+        if self.buf_size == 0 || self.current_index >= self.buf.len() {
             if self.read_next()? == 0 {
                 Err(ReadError::UnexpectedEofError)
             } else {
                 self.get_bit_from_lsb()
             }
         } else {
-            let bit = if self.buf[self.current_index] & 1u8 << (self.current_bits as u8) == 0 {
+            let bit = if self.buf[self.current_index] & (1u8 << self.current_bits as u8) == 0 {
                 0
             } else {
                 1
@@ -59,8 +59,9 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
             let mut bits = 0;
 
             for i in 0..size {
-                bits |= self.get_bit_from_lsb()? & 1u8 << i;
+                bits |= self.get_bit_from_lsb()? << i;
             }
+
             Ok(bits)
         }
     }
@@ -144,13 +145,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         let mut slice = &mut self.buf[0..self.current_index];
         let mut start_index = 0;
 
-        let current_index = if self.current_bits == 0 {
-            self.current_index
-        } else {
-            self.current_index + 1
-        };
-
-        while start_index < current_index {
+        while start_index < self.current_index {
             let size = self.writer.write(&mut slice)?;
 
             if size == 0 {
@@ -164,8 +159,14 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
             slice = &mut slice[size..];
         }
 
-        self.current_index = 0;
-        self.current_bits = 0;
+        if self.current_bits == 0 {
+            self.current_index = 0;
+            self.current_bits = 0;
+        } else {
+            self.buf[0] = self.buf[self.current_index];
+            self.current_index = 0;
+            self.current_bits = 0;
+        };
 
         Ok(())
     }
@@ -186,6 +187,10 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
     }
 
     pub fn write_bit(&mut self,b:bool) -> Result<(),WriteError> {
+        if self.current_index >= 256 {
+            self.flush()?;
+        }
+
         if self.current_bits == 0 {
             self.buf[self.current_index] = 0;
         }
@@ -206,7 +211,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
 
     pub fn write_u16(&mut self,value:u16) -> Result<(),WriteError> {
         self.write((value & 0xFF) as u8)?;
-        self.write(((value >> 8) &0xFF) as u8)?;
+        self.write(((value >> 8) & 0xFF) as u8)?;
 
         Ok(())
     }

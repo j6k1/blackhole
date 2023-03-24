@@ -120,19 +120,19 @@ impl Bits {
         let index = self.data.len() - 1;
 
         if b {
-            self.data[index] = self.data[index] | 1 << (7 - (self.len % 8));
+            self.data[index] |= 1 << (self.len % 8);
         }
 
         self.len += 1;
     }
 
     pub fn get_bit(&self,index:usize) -> Result<u8,WriteError> {
-        if self.data.len() <= index * 8 {
+        if self.data.len() <= index / 8 {
             Err(WriteError::InvalidState(String::from("Attempted to read outside the range of the input.")))
         } else {
             let bits = index % 8;
 
-            Ok((self.data[index / 8] & 1 << (7 - bits)) >> (7 - bits))
+            Ok((self.data[index / 8] & (1 << bits)) >> bits)
         }
     }
 

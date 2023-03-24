@@ -10,6 +10,7 @@ pub mod error;
 pub mod stream;
 pub mod huffman;
 
+#[derive(Debug)]
 pub struct Word {
     word:Vec<u8>,
     count: usize,
@@ -54,7 +55,7 @@ impl Word {
 }
 impl Ord for Word {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score().cmp(&other.score())
+        (self.size() * other.word.len() * other.count).cmp(&(other.size() *self.word.len() * self.count)).then(self.word.cmp(&other.word))
     }
 }
 impl PartialOrd for Word {
@@ -64,7 +65,7 @@ impl PartialOrd for Word {
 }
 impl PartialEq for Word {
     fn eq(&self, other: &Self) -> bool {
-        self.score() == other.score()
+        self.word == other.word
     }
 }
 impl Eq for Word {
@@ -74,6 +75,12 @@ pub struct BlackHole {
 
 }
 impl BlackHole {
+    pub fn new() -> BlackHole {
+        BlackHole {
+
+        }
+    }
+
     pub fn analysis<'a,'b,R>(&self,reader:&'a mut StreamReader<'b,R>)
         -> Result<(BTreeSet<Word>,usize),CompressionError> where R: Read + 'b {
 
@@ -93,7 +100,7 @@ impl BlackHole {
             }
         }
 
-        let mut dic = list.iter().fold(BTreeMap::new(), |mut acc,&(l,r)| {
+        let mut dic = list.iter().fold(BTreeMap::new(), | mut acc,&(l,r) | {
             acc.entry(data[l..r].to_vec()).or_insert(Vec::new()).push((l,r));
             acc
         });
@@ -104,7 +111,7 @@ impl BlackHole {
 
         while dic.len() > 0 {
             let (d,w) = dic.into_iter()
-                .fold((BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words),(_,list) | {
+                .fold((BTreeMap::new(),words), | (mut dic, mut words),(_,list) | {
                     dic = list.iter()
                         .cloned()
                         .zip(list.iter().skip(1).chain(vec![(data.len(),data.len())].iter()))
@@ -112,16 +119,15 @@ impl BlackHole {
                         .map(|(a,_)| a)
                         .fold(dic,| mut acc, (l,next) | {
                             let next_list = list.iter().filter(|&&(_,r)| {
-                                data[next] == data[r]
+                                next < data.len() && r < data.len() && data[next] == data[r]
                             }).map(|&(l,r)| (l,r+1)).collect::<Vec<(usize,usize)>>();
 
-                            if next_list.len() > 1 && next_list.len() + next - l + 1 <= list.len() + next - l {
+                            if next_list.len() > 1 && next_list.len() + next - l + 1 <= list.len() + next - l && next + 1 < data.len() {
                                 acc.insert(data[l..(next+1)].to_vec(), next_list);
                             }
 
                             acc
                         });
-
                 for (word,list) in dic.iter() {
                     words.insert(Word::new(word.clone(),list,data.len()));
                 }
@@ -180,16 +186,16 @@ impl BlackHole {
 
         let words = huffman_tree.words();
 
-        let dic_size = words.len() - 1;
+        let dic_size = words.len();
 
-        if dic_size <= 1 << 6 {
-            writer.write(0b00u8 << 6 | dic_size as u8 & 0b111111)?;
-        } else if dic_size <= 1 << 14 {
-            writer.write_u16(0b01u16 << 14 | (dic_size as u16))?;
-        } else if dic_size <= 1 << 30 {
-            writer.write_u32(0b10u32 << 30 | (dic_size as u32))?;
-        } else if dic_size <= 1 << 62 {
-            writer.write_u64(0b11u64 << 62 | (dic_size as u64))?;
+        if dic_size < 1 << 6 {
+            writer.write((dic_size as u8) << 2)?;
+        } else if dic_size < 1 << 14 {
+            writer.write_u16(((dic_size as u16) << 2) | 0b01)?;
+        } else if dic_size < 1 << 30 {
+            writer.write_u32(((dic_size as u32) << 2) | 0b10)?;
+        } else if dic_size < 1 << 62 {
+            writer.write_u64(((dic_size as u64) << 2) | 0b11)?;
         } else {
             return Err(CompressionError::LimitError(String::from("Data size is too large.")))
         }
@@ -197,14 +203,14 @@ impl BlackHole {
         for word in words {
             let word_size = word.len();
 
-            if word_size <= 1 << 6 {
-                writer.write(0b00u8 << 6 | word_size as u8 & 0b111111)?;
-            } else if word_size <= 1 << 14 {
-                writer.write_u16(0b01u16 << 14 | (word_size as u16))?;
-            } else if word_size <= 1 << 30 {
-                writer.write_u32(0b10u32 << 30 | (word_size as u32))?;
-            } else if word_size <= 1 << 62 {
-                writer.write_u64(0b11u64 << 62 | (word_size as u64))?;
+            if word_size < 1 << 6 {
+                writer.write((word_size as u8) << 2)?;
+            } else if word_size < 1 << 14 {
+                writer.write_u16(((word_size as u16) << 2) | 0b01)?;
+            } else if word_size < 1 << 30 {
+                writer.write_u32(((word_size as u32) << 2) | 0b10)?;
+            } else if word_size < 1 << 62 {
+                writer.write_u64(((word_size as u64) << 2) | 0b11)?;
             } else {
                 return Err(CompressionError::LimitError(String::from("Data size is too large.")))
             }
@@ -224,11 +230,14 @@ impl BlackHole {
         let dic_size = if h == 0b00 {
             reader.get_bits_from_lsb(6)? as usize
         } else if h == 0b01 {
-            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8)
+            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 6)
         } else if h == 0b10 {
-            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16)
+            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 6) | ((reader.read_u16()? as usize) << 14)
         } else if h == 0b11 {
-            (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16) | ((reader.read_u32()? as usize) << 32)
+            (reader.get_bits_from_lsb(6)? as usize) |
+            ((reader.read_u8()? as usize) << 6) |
+            ((reader.read_u16()? as usize) << 14) |
+            ((reader.read_u32()? as usize) << 30)
         } else {
             return Err(UnCompressionError::FormatError);
         };
@@ -236,14 +245,19 @@ impl BlackHole {
         let mut huffman_tree = HuffmanTree::new();
 
         for _ in 0..dic_size {
+            let h = reader.get_bits_from_lsb(2)?;
+
             let word_size = if h == 0b00 {
                 reader.get_bits_from_lsb(6)? as usize
             } else if h == 0b01 {
-                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8)
+                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 6)
             } else if h == 0b10 {
-                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16)
+                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 6) | ((reader.read_u16()? as usize) << 14)
             } else if h == 0b11 {
-                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16) | ((reader.read_u32()? as usize) << 32)
+                (reader.get_bits_from_lsb(6)? as usize) |
+                ((reader.read_u8()? as usize) << 6) |
+                ((reader.read_u16()? as usize) << 14) |
+                ((reader.read_u32()? as usize) << 30)
             } else {
                 return Err(UnCompressionError::FormatError);
             };
@@ -263,6 +277,8 @@ impl BlackHole {
 
             writer.write_bytes(word)?;
         }
+
+        writer.flush()?;
 
         Ok(())
     }

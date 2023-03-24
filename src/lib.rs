@@ -148,10 +148,12 @@ impl BlackHole {
 
         let mut p = 0;
 
+        let mut used_words = BTreeSet::new();
+
         'outer: while p < size {
             for w in words.iter() {
                 if w.positions.contains(&p) {
-                    huffman_tree.insert(w.word.clone())?;
+                    used_words.insert(w.clone());
                     seq.push(w.word.clone());
                     p +=  w.word.len();
 
@@ -160,6 +162,10 @@ impl BlackHole {
             }
 
             return Err(CompressionError::InvalidState(String::from("The word for the relevant position was not found in the dictionary.")));
+        }
+
+        for w in used_words.into_iter() {
+            huffman_tree.insert(w.word.clone())?;
         }
 
         Ok(seq)
@@ -171,6 +177,7 @@ impl BlackHole {
             huffman_tree.write(writer,w)?;
         }
 
+        writer.pad_zeros()?;
         writer.flush()?;
 
         Ok(())

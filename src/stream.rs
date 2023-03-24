@@ -165,7 +165,6 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         } else {
             self.buf[0] = self.buf[self.current_index];
             self.current_index = 0;
-            self.current_bits = 0;
         };
 
         Ok(())

@@ -74,6 +74,26 @@ impl HuffmanNode {
             }
         }
     }
+
+    fn words(&self) -> Vec<&[u8]> {
+        match self {
+            &HuffmanNode::Leaf { ref word } => {
+                vec![word]
+            },
+            &HuffmanNode::Node { ref left, ref right } => {
+                let mut words = Vec::new();
+                let mut r = left.words();
+
+                words.append(&mut r);
+
+                let mut r = right.words();
+
+                words.append(&mut r);
+
+                words
+            }
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Bits {
@@ -179,7 +199,11 @@ impl HuffmanTree {
             .and_then(|bits | bits.write(writer))
     }
 
-    pub fn get_dic(&self) -> &BTreeMap<Vec<u8>,Bits> {
-        &self.dic
+    pub fn words(&self) -> Vec<&[u8]> {
+        if let Some(root) = &self.root {
+            root.words()
+        } else {
+            Vec::new()
+        }
     }
 }

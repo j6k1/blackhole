@@ -178,9 +178,9 @@ impl BlackHole {
 
         let seq = self.build_words_and_tree(&words,size,&mut huffman_tree)?;
 
-        let dic = huffman_tree.get_dic();
+        let words = huffman_tree.words();
 
-        let dic_size = dic.len() - 1;
+        let dic_size = words.len() - 1;
 
         if dic_size <= 1 << 6 {
             writer.write(0b00u8 << 6 | dic_size as u8 & 0b111111)?;
@@ -194,7 +194,7 @@ impl BlackHole {
             return Err(CompressionError::LimitError(String::from("Data size is too large.")))
         }
 
-        for (word,bits) in dic {
+        for word in words {
             let word_size = word.len();
 
             if word_size <= 1 << 6 {
@@ -209,7 +209,7 @@ impl BlackHole {
                 return Err(CompressionError::LimitError(String::from("Data size is too large.")))
             }
 
-            writer.write_bytes(word.clone())?;
+            writer.write_bytes(word)?;
         }
 
         writer.write_u64(size as u64)?;
@@ -232,6 +232,37 @@ impl BlackHole {
         } else {
             return Err(UnCompressionError::FormatError);
         };
+
+        let mut huffman_tree = HuffmanTree::new();
+
+        for _ in 0..dic_size {
+            let word_size = if h == 0b00 {
+                reader.get_bits_from_lsb(6)? as usize
+            } else if h == 0b01 {
+                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8)
+            } else if h == 0b10 {
+                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16)
+            } else if h == 0b11 {
+                (reader.get_bits_from_lsb(6)? as usize) | ((reader.read_u8()? as usize) << 8) | ((reader.read_u16()? as usize) << 16) | ((reader.read_u32()? as usize) << 32)
+            } else {
+                return Err(UnCompressionError::FormatError);
+            };
+
+            let word = reader.read_until(word_size)?;
+
+            huffman_tree.insert(word)?;
+        }
+
+        let size = reader.read_u64()? as usize;
+
+        let mut current_size = 0;
+
+        while current_size < size {
+            let word = huffman_tree.find_word(reader)?;
+            current_size += word.len();
+
+            writer.write_bytes(word)?;
+        }
 
         Ok(())
     }

@@ -206,4 +206,12 @@ impl HuffmanTree {
             Vec::new()
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.dic.len()
+    }
+
+    pub fn contains_word(&self,word:&[u8]) -> bool {
+        self.dic.contains_key(word)
+    }
 }

@@ -55,12 +55,14 @@ impl Word {
 }
 impl Ord for Word {
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.size() * other.word.len() * other.count).cmp(&(other.size() *self.word.len() * self.count)).then(self.word.cmp(&other.word))
+        (self.size() as u128 * self.full_size as u128 * other.word.len() as u128 * other.count as u128).cmp(
+        &(other.size() as u128 * other.full_size as u128 * self.word.len() as u128 * self.count as u128)
+        ).then(self.word.cmp(&other.word).reverse())
     }
 }
 impl PartialOrd for Word {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.score().cmp(&other.score()))
+        Some(self.cmp(&other))
     }
 }
 impl PartialEq for Word {
@@ -129,7 +131,7 @@ impl BlackHole {
                             acc
                         });
                 for (word,list) in dic.iter() {
-                    words.insert(Word::new(word.clone(),list,data.len()));
+                    words.insert(Word::new(word.clone(), list, data.len()));
                 }
 
                 (dic,words)
@@ -153,9 +155,14 @@ impl BlackHole {
         'outer: while p < size {
             for w in words.iter() {
                 if w.positions.contains(&p) {
-                    used_words.insert(w.clone());
-                    seq.push(w.word.clone());
-                    p +=  w.word.len();
+                    if w.word.len() == 1 {
+                        seq.push(w.word.clone());
+                        p += 1;
+                    } else {
+                        used_words.insert(w.clone());
+                        seq.push(w.word.clone());
+                        p += w.word.len();
+                    }
 
                     continue 'outer;
                 }
@@ -165,16 +172,27 @@ impl BlackHole {
         }
 
         for w in used_words.into_iter() {
-            huffman_tree.insert(w.word.clone())?;
+            if  huffman_tree.len() / 2 + 1 <= w.word.len() * 9 {
+                huffman_tree.insert(w.word.clone())?;
+            }
         }
 
+        dbg!(huffman_tree.len());
         Ok(seq)
     }
 
     pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,words:Vec<Vec<u8>>,huffman_tree:&mut HuffmanTree)
         -> Result<(),CompressionError> where W: Write {
         for w in words {
-            huffman_tree.write(writer,w)?;
+            if !huffman_tree.contains_word(&w) {
+                for &b in &w {
+                    writer.write_bit(false)?;
+                    writer.write(b)?;
+                }
+            } else {
+                writer.write_bit(true)?;
+                huffman_tree.write(writer,w)?;
+            }
         }
 
         writer.pad_zeros()?;
@@ -279,10 +297,18 @@ impl BlackHole {
         let mut current_size = 0;
 
         while current_size < size {
-            let word = huffman_tree.find_word(reader)?;
-            current_size += word.len();
+            let h = reader.get_bit_from_lsb()?;
 
-            writer.write_bytes(word)?;
+            if h == 0b0 {
+                current_size += 1;
+
+                writer.write(reader.read_u8()?)?;
+            } else {
+                let word = huffman_tree.find_word(reader)?;
+                current_size += word.len();
+
+                writer.write_bytes(word)?;
+            }
         }
 
         writer.flush()?;

@@ -144,7 +144,10 @@ impl BlackHole {
         Ok((words,data.len()))
     }
 
-    pub fn build_words_and_tree<'a,'b>(&mut self,words:&'a BTreeSet<Word>,size:usize,huffman_tree:&'b mut HuffmanTree)
+    pub fn build_words_and_tree<'a,'b>(&mut self,
+                                       words:&'a BTreeSet<Word>,
+                                       size:usize,
+                                       huffman_tree:&'b mut HuffmanTree<Vec<u8>>)
         -> Result<Vec<Vec<u8>>,CompressionError> where 'a: 'b {
         let mut seq = Vec::new();
 
@@ -172,25 +175,26 @@ impl BlackHole {
         }
 
         for w in used_words.into_iter() {
-            if  huffman_tree.len() / 2 + 1 <= w.word.len() * 9 {
+            if huffman_tree.len() < w.word.len() * 9 - 1 {
                 huffman_tree.insert(w.word.clone())?;
             }
         }
 
-        dbg!(huffman_tree.len());
         Ok(seq)
     }
 
-    pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,words:Vec<Vec<u8>>,huffman_tree:&mut HuffmanTree)
+    pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,
+                                   words:Vec<Vec<u8>>,
+                                   huffman_tree:&mut HuffmanTree<Vec<u8>>)
         -> Result<(),CompressionError> where W: Write {
         for w in words {
             if !huffman_tree.contains_word(&w) {
                 for &b in &w {
-                    writer.write_bit(false)?;
+                    writer.write_bit(true)?;
                     writer.write(b)?;
                 }
             } else {
-                writer.write_bit(true)?;
+                writer.write_bit(false)?;
                 huffman_tree.write(writer,w)?;
             }
         }
@@ -300,15 +304,17 @@ impl BlackHole {
             let h = reader.get_bit_from_lsb()?;
 
             if h == 0b0 {
-                current_size += 1;
-
-                writer.write(reader.read_u8()?)?;
-            } else {
                 let word = huffman_tree.find_word(reader)?;
                 current_size += word.len();
 
                 writer.write_bytes(word)?;
-            }
+            } else if h == 0b1 {
+                current_size += 1;
+
+                writer.write(reader.read_u8()?)?;
+            } else {
+                return Err(UnCompressionError::FormatError);
+            };
         }
 
         writer.flush()?;

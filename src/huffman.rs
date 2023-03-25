@@ -3,27 +3,27 @@ use std::io::{Read, Write};
 use crate::error::{ReadError, WriteError};
 use crate::stream::{StreamReader, StreamWriter};
 
-pub enum HuffmanNode {
+pub enum HuffmanNode<T> where T: Ord + Clone {
     Node {
-        left: Box<HuffmanNode>,
-        right: Box<HuffmanNode>
+        left: Box<HuffmanNode<T>>,
+        right: Box<HuffmanNode<T>>
     },
     Leaf {
-        word: Vec<u8>
+        word: T
     }
 }
-impl HuffmanNode {
-    pub fn new(word:Vec<u8>) -> HuffmanNode {
+impl<T> HuffmanNode<T> where T: Ord + Clone {
+    pub fn new(word:T) -> HuffmanNode<T> {
         HuffmanNode::Leaf {
             word: word
         }
     }
 
     fn insert(self:Box<Self>,
-                    word:Vec<u8>,
+                    word:T,
                     mut lbits: Bits,
                     mut rbits: Bits,
-                    dic:&mut BTreeMap<Vec<u8>,Bits>) -> Result<Box<Self>,WriteError> {
+                    dic:&mut BTreeMap<T,Bits>) -> Result<Box<Self>,WriteError> {
 
         match *self {
             HuffmanNode::Leaf { word: ref w} => {
@@ -60,7 +60,7 @@ impl HuffmanNode {
         }
     }
 
-    fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&[u8],ReadError> where R: Read {
+    fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&T,ReadError> where R: Read {
         match self {
             &HuffmanNode::Leaf { ref word } => {
                 Ok(word)
@@ -75,7 +75,7 @@ impl HuffmanNode {
         }
     }
 
-    fn words(&self) -> Vec<&[u8]> {
+    fn words(&self) -> Vec<&T> {
         match self {
             &HuffmanNode::Leaf { ref word } => {
                 vec![word]
@@ -150,19 +150,19 @@ impl Bits {
         Ok(())
     }
 }
-pub struct HuffmanTree {
-    root:Option<Box<HuffmanNode>>,
-    dic:BTreeMap<Vec<u8>,Bits>
+pub struct HuffmanTree<T> where T: Ord + Clone {
+    root:Option<Box<HuffmanNode<T>>>,
+    dic:BTreeMap<T,Bits>
 }
-impl HuffmanTree {
-    pub fn new() -> HuffmanTree {
+impl<T> HuffmanTree<T> where T: Ord + Clone {
+    pub fn new() -> HuffmanTree<T> {
         HuffmanTree {
             root: None,
             dic: BTreeMap::new()
         }
     }
 
-    pub fn insert(&mut self, word: Vec<u8>) -> Result<(),WriteError> {
+    pub fn insert(&mut self, word: T) -> Result<(),WriteError> {
         if !self.dic.contains_key(&word) {
             let root = self.root.take();
 
@@ -185,7 +185,7 @@ impl HuffmanTree {
         Ok(())
     }
 
-    pub fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&[u8],ReadError> where R: Read {
+    pub fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&T,ReadError> where R: Read {
         if let Some(root) = &self.root {
             root.find_word(reader)
         } else {
@@ -193,13 +193,13 @@ impl HuffmanTree {
         }
     }
 
-    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:Vec<u8>) -> Result<(),WriteError> where W: Write {
+    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:T) -> Result<(),WriteError> where W: Write {
         self.dic.get(&word)
             .ok_or(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary.")))
             .and_then(|bits | bits.write(writer))
     }
 
-    pub fn words(&self) -> Vec<&[u8]> {
+    pub fn words(&self) -> Vec<&T> {
         if let Some(root) = &self.root {
             root.words()
         } else {
@@ -211,7 +211,7 @@ impl HuffmanTree {
         self.dic.len()
     }
 
-    pub fn contains_word(&self,word:&[u8]) -> bool {
+    pub fn contains_word(&self,word:&T) -> bool {
         self.dic.contains_key(word)
     }
 }

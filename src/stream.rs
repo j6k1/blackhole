@@ -231,9 +231,21 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         Ok(())
     }
 
-    pub fn write_u8_to_bits(&mut self,value:u8) -> Result<(),WriteError> {
+    fn write_u8_to_bits(&mut self,value:u8) -> Result<(),WriteError> {
         for i in 0..8 {
             if value & (1u8 << i) != 0 {
+                self.write_bit(true)?;
+            } else {
+                self.write_bit(false)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn write_bits(&mut self,value:u64,len:usize) -> Result<(),WriteError> {
+        for i in 0..len {
+            if value & (1u64 << i) != 0 {
                 self.write_bit(true)?;
             } else {
                 self.write_bit(false)?;

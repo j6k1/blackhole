@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::io::Read;
 use crate::error::{CompressionError, UnCompressionError};
@@ -15,14 +15,14 @@ pub struct Word {
     word:Vec<u8>,
     count: usize,
     full_size: usize,
-    positions: HashSet<usize>
+    positions: BTreeSet<(usize,usize)>
 }
 impl Word {
     pub fn new(word:Vec<u8>, list: &[(usize,usize)], full_size:usize) -> Word {
-        let mut positions = HashSet::new();
+        let mut positions = BTreeSet::new();
 
-        for (s,_) in list.iter() {
-            positions.insert(*s);
+        for &(s,e) in list.iter() {
+            positions.insert((s,e));
         }
 
         Word {
@@ -31,18 +31,6 @@ impl Word {
             full_size: full_size,
             positions: positions
         }
-    }
-
-    pub fn add_count(&mut self) {
-        self.count += 1;
-    }
-
-    pub fn push_position(&mut self, position: usize) {
-        self.positions.insert(position);
-    }
-
-    pub fn contains_position(&self, position: usize) -> bool {
-        self.positions.contains(&position)
     }
 
     pub fn size(&self) -> usize {
@@ -113,23 +101,20 @@ impl BlackHole {
 
         while dic.len() > 0 {
             let (d,w) = dic.into_iter()
-                .fold((BTreeMap::new(),words), | (mut dic, mut words),(_,list) | {
-                    dic = list.iter()
-                        .cloned()
-                        .zip(list.iter().skip(1).chain(vec![(data.len(),data.len())].iter()))
-                        .filter(|(a,b)| a.1 - 1 < b.0)
-                        .map(|(a,_)| a)
-                        .fold(dic,| mut acc, (l,next) | {
-                            let next_list = list.iter().filter(|&&(_,r)| {
-                                next < data.len() && r < data.len() && data[next] == data[r]
-                            }).map(|&(l,r)| (l,r+1)).collect::<Vec<(usize,usize)>>();
+                .fold((BTreeMap::new(),words), | (dic, mut words), (word, list) | {
 
-                            if next_list.len() > 1 && next_list.len() + next - l + 1 <= list.len() + next - l && next + 1 < data.len() {
-                                acc.insert(data[l..(next+1)].to_vec(), next_list);
-                            }
+                let dic = list.iter().filter(|&&(_,r)| {
+                    r < data.len()
+                }).fold(dic, | mut acc,&(l,r) | {
+                    acc.entry(data[l..(r+1)].to_vec()).or_insert(Vec::new()).push((l,r+1));
+                    acc
+                }).into_iter().filter(|(_,next_list)| {
+                    next_list.len() > 1 && next_list.len() + word.len() + 1 <= list.len() + word.len()
+                }).fold(BTreeMap::new(),| mut acc,(k,v)| {
+                    acc.insert(k,v);
+                    acc
+                });
 
-                            acc
-                        });
                 for (word,list) in dic.iter() {
                     words.insert(Word::new(word.clone(), list, data.len()));
                 }
@@ -149,38 +134,52 @@ impl BlackHole {
                                        size:usize,
                                        huffman_tree:&'b mut HuffmanTree<Vec<u8>>)
         -> Result<Vec<Vec<u8>>,CompressionError> where 'a: 'b {
-        let mut seq = Vec::new();
-
-        let mut p = 0;
+        let mut seq = BTreeMap::new();
 
         let mut used_words = BTreeSet::new();
 
-        'outer: while p < size {
-            for w in words.iter() {
-                if w.positions.contains(&p) {
-                    if w.word.len() == 1 {
-                        seq.push(w.word.clone());
-                        p += 1;
-                    } else {
-                        used_words.insert(w.clone());
-                        seq.push(w.word.clone());
-                        p += w.word.len();
-                    }
+        let mut start_to_end_map = BTreeMap::new();
+        let mut end_to_start_map = BTreeMap::new();
 
-                    continue 'outer;
+        let mut current_size = 0;
+
+        'outer: for w in words.into_iter() {
+            for &(s,e) in w.positions.iter() {
+                if current_size >= size {
+                    break 'outer;
+                }
+
+                if start_to_end_map.range(..=s).next_back().map(|(_,&r)| s <= r).unwrap_or(false) {
+                    continue;
+                } else if end_to_start_map.range((e-1)..).next().map(|(_,&l)| e - 1 >= l).unwrap_or(false) {
+                    continue;
+                } else {
+                    start_to_end_map.insert(s,e-1);
+                    end_to_start_map.insert(e-1,s);
+
+                    used_words.insert(w);
+
+                    current_size += w.word.len();
+
+                    assert!(!seq.contains_key(&s));
+
+                    seq.insert(s,w.word.clone());
                 }
             }
-
-            return Err(CompressionError::InvalidState(String::from("The word for the relevant position was not found in the dictionary.")));
         }
 
         for w in used_words.into_iter() {
-            if huffman_tree.len() < w.word.len() * 9 - 1 {
+            if huffman_tree.len() + 1 < w.word.len() * 9 - 1 {
                 huffman_tree.insert(w.word.clone())?;
             }
         }
 
-        Ok(seq)
+        let mut r = Vec::new();
+
+        for (_,w) in seq.into_iter() {
+            r.push(w);
+        }
+        Ok(r)
     }
 
     pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,

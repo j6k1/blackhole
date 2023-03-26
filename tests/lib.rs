@@ -21,7 +21,7 @@ fn compression_and_uncompression() {
 
     bh.compression(&mut sr,&mut sw).unwrap();
 
-    let size = o.len();
+    let size = sw.written_size();
 
     let mut reader = BufReader::new(File::open("testdata/legal_moves.rs").unwrap());
 
@@ -40,6 +40,8 @@ fn compression_and_uncompression() {
     let mut sw = StreamWriter::new(&mut uncompress);
 
     bh.uncompression(&mut sr,&mut sw).unwrap();
+
+    //println!("{}",String::from_utf8_lossy(&uncompress));
 
     assert_eq!(original,uncompress);
 }

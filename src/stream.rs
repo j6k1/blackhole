@@ -9,9 +9,9 @@ pub struct StreamReader<'a,R> where R: Read +'a {
     current_bits:usize
 }
 impl<'a,R> StreamReader<'a,R> where R: Read +'a {
-    pub fn new(writer:&'a mut R) -> StreamReader<'a,R> {
+    pub fn new(reader:&'a mut R) -> StreamReader<'a,R> {
         StreamReader {
-            reader:writer,
+            reader: reader,
             buf: [0;256],
             buf_size: 0,
             current_index:0,
@@ -195,7 +195,7 @@ impl<'a,W> StreamWriter<'a,W> where W: Write +'a {
         }
 
         if b {
-            self.buf[self.current_index] = self.buf[self.current_index] | (1u8 << self.current_bits);
+            self.buf[self.current_index] |= 1u8 << self.current_bits;
         }
 
         self.current_bits += 1;

@@ -153,6 +153,8 @@ impl BlackHole {
         let mut current_size = 0;
 
         'outer: for w in words.into_iter() {
+            let mut contains = false;
+
             for &(s,e) in w.positions.iter() {
                 if current_size >= size {
                     break 'outer;
@@ -169,7 +171,7 @@ impl BlackHole {
                     end_to_start_map.insert(e-1,s);
 
                     if w.word.len() > 1 {
-                        used_words.insert(w);
+                        contains = true;
                     }
 
                     current_size += w.word.len();
@@ -177,10 +179,14 @@ impl BlackHole {
                     seq.insert(s,w.word.clone());
                 }
             }
+
+            if contains {
+                used_words.insert(Word::new(w.word.clone(),&w.positions.iter().copied().collect::<Vec<(usize,usize)>>(),size));
+            }
         }
 
         for w in used_words.into_iter() {
-            if huffman_tree.len() + 1 < w.word.len() * 9 - 1 {
+            if huffman_tree.len() + 1 < w.word.len() * 9 {
                 huffman_tree.insert(w.word.clone())?;
             }
         }

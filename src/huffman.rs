@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, BTreeMap};
+use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use crate::error::{CompressionError, ReadError, UnCompressionError, WriteError};
@@ -119,7 +120,7 @@ impl<T> HuffmanItem<T> where T: Ord + Clone + Default {
 }
 impl<T> Ord for HuffmanItem<T> where T: Ord + Clone + Default {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score)
+        self.score.cmp(&other.score).reverse()
             .then((&self.node as *const HuffmanNode<T> as usize).cmp(&(&other.node as *const HuffmanNode<T> as usize)))
     }
 }
@@ -134,7 +135,7 @@ impl<T> PartialEq for HuffmanItem<T> where T: Ord + Clone + Default {
     }
 }
 impl<T> Eq for HuffmanItem<T> where T: Ord + Clone + Default {}
-#[derive(Clone)]
+#[derive(Debug,Clone)]
 pub struct Bits {
     len:usize,
     data:Vec<u8>
@@ -189,11 +190,12 @@ impl Bits {
         Ok(())
     }
 }
-pub struct HuffmanTree<T> where T: Ord + Clone + Default {
+#[derive(Debug)]
+pub struct HuffmanTree<T> where T: Ord + Clone + Default + Debug {
     root:Option<Box<HuffmanNode<T>>>,
     dic:BTreeMap<T,Bits>
 }
-impl<T> HuffmanTree<T> where T: Ord + Clone + Default {
+impl<T> HuffmanTree<T> where T: Ord + Clone + Default + Debug {
     pub fn new(words:Vec<(T,Fraction)>) -> HuffmanTree<T> {
         let mut queue = BinaryHeap::new();
 

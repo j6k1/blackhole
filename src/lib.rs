@@ -20,7 +20,7 @@ pub struct Word {
     positions: BTreeSet<(usize,usize)>
 }
 impl Word {
-    pub fn new(word:Vec<u8>, list: &[(usize,usize)], full_size:usize) -> Word {
+    pub fn new(word:Vec<u8>, list: &[(usize,usize)]) -> Word {
         let mut positions = BTreeSet::new();
 
         for &(s,e) in list.iter() {
@@ -31,7 +31,7 @@ impl Word {
 
         Word {
             word: word,
-            score: Fraction::new(full_size as u64) / word_len * list.len() as u64 / (word_len + list.len() as u64),
+            score: Fraction::new(1) / word_len * list.len() as u64 / (word_len + list.len() as u64),
             positions: positions
         }
     }
@@ -93,7 +93,7 @@ impl BlackHole {
         });
 
         for (word,list) in dic.iter() {
-            words.insert(Word::new(word.clone(), &list, data.len()));
+            words.insert(Word::new(word.clone(), &list));
         }
 
         while dic.len() > 0 {
@@ -119,7 +119,7 @@ impl BlackHole {
                 });
 
                 for (word,list) in d.iter() {
-                    words.insert(Word::new(word.clone(), list, data.len()));
+                    words.insert(Word::new(word.clone(), list));
                 }
 
                 dic.append(&mut d);

@@ -8,7 +8,7 @@ pub struct Fraction {
     d:u64
 }
 #[inline]
-fn gcd(a:u64,b:u64) -> u64 {
+fn gcd(a:u128,b:u128) -> u128 {
     if b > a {
         gcd(b,a)
     } else if b == 0 {
@@ -42,27 +42,27 @@ impl Add for Fraction {
                 d: 1
             }
         } else if self.d == rhs.d {
-            let d = self.d;
-            let n = self.n + rhs.n;
+            let d = self.d as u128;
+            let n = self.n as u128 + rhs.n as u128;
 
             let g = gcd(n,d);
 
             if g == 1 {
                 Fraction {
-                    n: n,
-                    d: d
+                    n: n as u64,
+                    d: d as u64
                 }
             } else {
                 Fraction {
-                    n: n / g,
-                    d: d / g
+                    n: (n / g) as u64,
+                    d: (d / g) as u64
                 }
             }
         } else {
-            let ad = self.d;
-            let bd = rhs.d;
-            let an = self.n * bd;
-            let bn = rhs.n * ad;
+            let ad = self.d as u128;
+            let bd = rhs.d as u128;
+            let an = self.n as u128 * bd;
+            let bn = rhs.n as u128 * ad;
             let d = ad * bd;
             let n = an + bn;
 
@@ -70,13 +70,13 @@ impl Add for Fraction {
 
             if g == 1 {
                 Fraction {
-                    n: n,
-                    d: d
+                    n: n as u64,
+                    d: d as u64
                 }
             } else {
                 Fraction {
-                    n: n / g,
-                    d: d / g
+                    n: (n / g) as u64,
+                    d: (d / g) as u64
                 }
             }
         }
@@ -98,27 +98,27 @@ impl Sub for Fraction {
                 d: 1
             }
         } else if self.d == rhs.d {
-            let d = self.d;
-            let n = self.n - rhs.n;
+            let d = self.d as u128;
+            let n = self.n as u128 - rhs.n as u128;
 
             let g = gcd(n,d);
 
             if g == 1 {
                 Fraction {
-                    n: n,
-                    d: d
+                    n: n as u64,
+                    d: d as u64
                 }
             } else {
                 Fraction {
-                    n: n / g,
-                    d: d / g
+                    n: (n / g) as u64,
+                    d: (d / g) as u64
                 }
             }
         } else {
-            let ad = self.d;
-            let bd = rhs.d;
-            let an = self.n * bd;
-            let bn = rhs.n * ad;
+            let ad = self.d as u128;
+            let bd = rhs.d as u128;
+            let an = self.n as u128 * bd;
+            let bn = rhs.n as u128 * ad;
             let d = ad * bd;
             let n = an - bn;
 
@@ -126,13 +126,13 @@ impl Sub for Fraction {
 
             if g == 1 {
                 Fraction {
-                    n: n,
-                    d: d
+                    n: n as u64,
+                    d: d as u64
                 }
             } else {
                 Fraction {
-                    n: n / g,
-                    d: d / g
+                    n: (n / g) as u64,
+                    d: (d / g) as u64
                 }
             }
         }
@@ -148,20 +148,20 @@ impl Div<u64> for Fraction {
     type Output = Fraction;
     #[inline]
     fn div(self, rhs: u64) -> Self::Output {
-        let n = self.n;
-        let d = self.d * rhs;
+        let n = self.n as u128;
+        let d = self.d as u128 * rhs as u128;
 
         let g = gcd(n,d);
 
         if g == 1 {
             Fraction {
-                n: n,
-                d: d
+                n: n as u64,
+                d: d as u64
             }
         } else {
             Fraction {
-                n: n / g,
-                d: d / g
+                n: (n / g) as u64,
+                d: (d / g) as u64
             }
         }
     }
@@ -176,20 +176,20 @@ impl Mul<u64> for Fraction {
     type Output = Fraction;
     #[inline]
     fn mul(self, rhs: u64) -> Self::Output {
-        let n = self.n * rhs;
-        let d = self.d;
+        let n = self.n as u128 * rhs as u128;
+        let d = self.d as u128;
 
         let g = gcd(n,d);
 
         if g == 1 {
             Fraction {
-                n: n,
-                d: d
+                n: n as u64,
+                d: d as u64
             }
         } else {
             Fraction {
-                n: n / g,
-                d: d / g
+                n: (n / g) as u64,
+                d: (d / g) as u64
             }
         }
     }
@@ -206,10 +206,10 @@ impl Ord for Fraction {
         if self.d == other.d {
             self.n.cmp(&other.n)
         } else {
-            let ad = self.d;
-            let bd = other.d;
-            let an = self.n;
-            let bn = other.n;
+            let ad = self.d as u128;
+            let bd = other.d as u128;
+            let an = self.n as u128;
+            let bn = other.n as u128;
 
             let an = an * bd;
             let bn = bn * ad;

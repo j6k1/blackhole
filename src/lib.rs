@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::io::Write;
 use std::io::Read;
 use crate::error::{CompressionError, UnCompressionError};
@@ -101,11 +102,20 @@ impl BlackHole {
 
         while dic.len() > 0 {
             let (d,w) = dic.into_iter()
-                .fold((BTreeMap::new(),words), | (dic, mut words), (word, list) | {
+                .fold((BTreeMap::new(),words), | (mut dic, mut words), (word, list) | {
 
-                let dic = list.iter().filter(|&&(_,r)| {
+                assert!(!dic.contains_key(&word));
+
+                let next_iter = list.iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_iter());
+
+                let mut d = list.iter().filter(|&&(l,r)| {
+                    assert_eq!(data[l..r], word);
                     r < data.len()
-                }).fold(dic, | mut acc,&(l,r) | {
+                }).zip(next_iter).filter(|&(a,b)| {
+                    a.1 <= b.0
+                }).map(|(a,_)| {
+                    a
+                }).fold(BTreeMap::new(), | mut acc,&(l,r) | {
                     acc.entry(data[l..(r+1)].to_vec()).or_insert(Vec::new()).push((l,r+1));
                     acc
                 }).into_iter().filter(|(_,next_list)| {
@@ -115,9 +125,11 @@ impl BlackHole {
                     acc
                 });
 
-                for (word,list) in dic.iter() {
+                for (word,list) in d.iter() {
                     words.insert(Word::new(word.clone(), list, data.len()));
                 }
+
+                dic.append(&mut d);
 
                 (dic,words)
             });
@@ -157,16 +169,21 @@ impl BlackHole {
                     start_to_end_map.insert(s,e-1);
                     end_to_start_map.insert(e-1,s);
 
-                    used_words.insert(w);
+                    if w.word.len() > 1 {
+                        used_words.insert(w);
+                    }
 
                     current_size += w.word.len();
 
+                    assert_eq!(e-s,w.word.len());
                     assert!(!seq.contains_key(&s));
 
                     seq.insert(s,w.word.clone());
                 }
             }
         }
+
+        assert_eq!(size,current_size);
 
         for w in used_words.into_iter() {
             if huffman_tree.len() + 1 < w.word.len() * 9 - 1 {

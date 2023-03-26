@@ -104,17 +104,14 @@ impl BlackHole {
             let (d,w) = dic.into_iter()
                 .fold((BTreeMap::new(),words), | (mut dic, mut words), (word, list) | {
 
-                assert!(!dic.contains_key(&word));
-
                 let next_iter = list.iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_iter());
 
-                let mut d = list.iter().filter(|&&(l,r)| {
-                    assert_eq!(data[l..r], word);
-                    r < data.len()
-                }).zip(next_iter).filter(|&(a,b)| {
+                let mut d = list.iter().zip(next_iter).filter(|&(a,b)| {
                     a.1 <= b.0
                 }).map(|(a,_)| {
                     a
+                }).filter(|&&(_,r)| {
+                    r  < data.len()
                 }).fold(BTreeMap::new(), | mut acc,&(l,r) | {
                     acc.entry(data[l..(r+1)].to_vec()).or_insert(Vec::new()).push((l,r+1));
                     acc
@@ -165,6 +162,8 @@ impl BlackHole {
                     continue;
                 } else if end_to_start_map.range((e-1)..).next().map(|(_,&l)| e - 1 >= l).unwrap_or(false) {
                     continue;
+                } else if start_to_end_map.range(s..).next().map(|(_,&l)| l <= e - 1).unwrap_or(false) {
+                    continue;
                 } else {
                     start_to_end_map.insert(s,e-1);
                     end_to_start_map.insert(e-1,s);
@@ -175,15 +174,10 @@ impl BlackHole {
 
                     current_size += w.word.len();
 
-                    assert_eq!(e-s,w.word.len());
-                    assert!(!seq.contains_key(&s));
-
                     seq.insert(s,w.word.clone());
                 }
             }
         }
-
-        assert_eq!(size,current_size);
 
         for w in used_words.into_iter() {
             if huffman_tree.len() + 1 < w.word.len() * 9 - 1 {

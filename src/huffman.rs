@@ -55,13 +55,13 @@ impl<T> HuffmanNode<T> where T: Ord + Clone + Default {
             } => {
                 if index < bits.len && bits.get_bit(index)? == 0 {
                     Ok(Box::new(HuffmanNode::Node {
-                        left: l.insert(word,bits,index)?,
+                        left: l.insert(word,bits,index+1)?,
                         right: r
                     }))
                 } else if index < bits.len && bits.get_bit(index)? == 1 {
                     Ok(Box::new(HuffmanNode::Node {
                         left: l,
-                        right: r.insert(word,bits,index)?
+                        right: r.insert(word,bits,index+1)?
                     }))
                 } else {
                     Err(UnCompressionError::from(ReadError::InvalidState(String::from("Huffman node status is invalid."))))

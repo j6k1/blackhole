@@ -3,19 +3,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::io::Write;
 use std::io::Read;
-use crate::error::{CompressionError, UnCompressionError};
-use crate::huffman::HuffmanTree;
+use crate::error::{ReadError, CompressionError, UnCompressionError};
+use crate::huffman::{Bits, HuffmanTree};
+use crate::num::Fraction;
 use crate::stream::{StreamReader, StreamWriter};
 
 pub mod error;
 pub mod stream;
 pub mod huffman;
+pub mod num;
 
 #[derive(Debug)]
 pub struct Word {
     word:Vec<u8>,
-    count: usize,
-    full_size: usize,
+    score:Fraction,
     positions: BTreeSet<(usize,usize)>
 }
 impl Word {
@@ -26,27 +27,22 @@ impl Word {
             positions.insert((s,e));
         }
 
+        let word_len = word.len() as u64;
+
         Word {
             word: word,
-            count: list.len(),
-            full_size: full_size,
+            score: Fraction::new(full_size as u64) / word_len * list.len() as u64 / (word_len + list.len() as u64),
             positions: positions
         }
     }
 
-    pub fn size(&self) -> usize {
-        self.word.len() + self.count
-    }
-
-    pub fn score(&self) -> u128 {
-        (self.size() as u128) * self.full_size as u128 / (self.word.len() * self.count) as u128
+    pub fn score(&self) -> Fraction {
+        self.score
     }
 }
 impl Ord for Word {
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.size() as u128 * self.full_size as u128 * other.word.len() as u128 * other.count as u128).cmp(
-        &(other.size() as u128 * other.full_size as u128 * self.word.len() as u128 * self.count as u128)
-        ).then(self.word.cmp(&other.word).reverse())
+        self.score.cmp(&other.score).then(self.word.cmp(&other.word).reverse())
     }
 }
 impl PartialOrd for Word {
@@ -140,12 +136,11 @@ impl BlackHole {
 
     pub fn build_words_and_tree<'a,'b>(&mut self,
                                        words:&'a BTreeSet<Word>,
-                                       size:usize,
-                                       huffman_tree:&'b mut HuffmanTree<Vec<u8>>)
-        -> Result<Vec<Vec<u8>>,CompressionError> where 'a: 'b {
+                                       size:usize)
+        -> Result<(Vec<Vec<u8>>,HuffmanTree<Vec<u8>>),CompressionError> where 'a: 'b {
         let mut seq = BTreeMap::new();
 
-        let mut used_words = BTreeSet::new();
+        let mut used_words = Vec::new();
 
         let mut start_to_end_map = BTreeMap::new();
         let mut end_to_start_map = BTreeMap::new();
@@ -181,22 +176,18 @@ impl BlackHole {
             }
 
             if contains {
-                used_words.insert(Word::new(w.word.clone(),&w.positions.iter().copied().collect::<Vec<(usize,usize)>>(),size));
+                used_words.push((w.word.clone(),w.score()));
             }
         }
 
-        for w in used_words.into_iter() {
-            if huffman_tree.len() + 1 < w.word.len() * 9 {
-                huffman_tree.insert(w.word.clone())?;
-            }
-        }
+        let huffman_tree = HuffmanTree::new(used_words);
 
         let mut r = Vec::new();
 
         for (_,w) in seq.into_iter() {
             r.push(w);
         }
-        Ok(r)
+        Ok((r,huffman_tree))
     }
 
     pub fn complete_compression<W>(&mut self,writer:&mut StreamWriter<'_,W>,
@@ -225,9 +216,7 @@ impl BlackHole {
         -> Result<(),CompressionError> where W: Write, R: Read {
         let (words,size) = self.analysis(reader)?;
 
-        let mut huffman_tree = HuffmanTree::new();
-
-        let seq = self.build_words_and_tree(&words,size,&mut huffman_tree)?;
+        let (seq,mut huffman_tree) = self.build_words_and_tree(&words,size)?;
 
         let words = huffman_tree.words();
 
@@ -246,6 +235,20 @@ impl BlackHole {
         }
 
         for word in words {
+            let bits = huffman_tree.get_bits(word).ok_or(ReadError::UnexpectedEofError)?;
+
+            if bits.len() < 1 << 7 {
+                writer.write_bit(false)?;
+                writer.write_bits(bits.len() as u64,7)?;
+            } else if bits.len() < 1 << 15 {
+                writer.write_bit(true)?;
+                writer.write_bits(bits.len() as u64,15)?;
+            } else {
+                return Err(CompressionError::LimitError(String::from("The size of the Huffman sign is too large.")));
+            }
+
+            bits.write(writer)?;
+
             let word_size = word.len();
 
             if word_size < 1 << 6 {
@@ -287,9 +290,27 @@ impl BlackHole {
             return Err(UnCompressionError::FormatError);
         };
 
-        let mut huffman_tree = HuffmanTree::new();
+        let mut huffman_tree = HuffmanTree::empty();
 
         for _ in 0..dic_size {
+            let h = reader.get_bit_from_lsb()?;
+
+            let huffman_code_size = if h == 0 {
+                reader.get_bits_from_lsb(7)? as usize
+            } else {
+                reader.get_bits_from_lsb(7)? as usize | (reader.read_u8()? as usize) << 7
+            };
+
+            let mut code = Bits::new();
+
+            for _ in 0..huffman_code_size {
+                code.push_bit(if reader.get_bit_from_lsb()? == 0 {
+                    false
+                } else {
+                    true
+                });
+            }
+
             let h = reader.get_bits_from_lsb(2)?;
 
             let word_size = if h == 0b00 {
@@ -309,7 +330,7 @@ impl BlackHole {
 
             let word = reader.read_until(word_size)?;
 
-            huffman_tree.insert(word)?;
+            huffman_tree.insert(word,code)?;
         }
 
         let size = reader.read_u64()? as usize;

@@ -1,9 +1,13 @@
-use std::collections::{BTreeMap};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, BTreeMap};
 use std::io::{Read, Write};
-use crate::error::{ReadError, WriteError};
+use std::ops::Deref;
+use crate::error::{CompressionError, ReadError, UnCompressionError, WriteError};
+use crate::num::Fraction;
 use crate::stream::{StreamReader, StreamWriter};
 
-pub enum HuffmanNode<T> where T: Ord + Clone {
+#[derive(Debug,Clone)]
+pub enum HuffmanNode<T> where T: Ord + Clone + Default {
     Node {
         left: Box<HuffmanNode<T>>,
         right: Box<HuffmanNode<T>>
@@ -12,57 +16,62 @@ pub enum HuffmanNode<T> where T: Ord + Clone {
         word: T
     }
 }
-impl<T> HuffmanNode<T> where T: Ord + Clone {
+impl<T> HuffmanNode<T> where T: Ord + Clone + Default {
     pub fn new(word:T) -> HuffmanNode<T> {
         HuffmanNode::Leaf {
             word: word
         }
     }
 
-    fn insert(self:Box<Self>,
-                    word:T,
-                    mut lbits: Bits,
-                    mut rbits: Bits,
-                    dic:&mut BTreeMap<T,Bits>) -> Result<Box<Self>,WriteError> {
+    pub fn empty() -> HuffmanNode<T> {
+        HuffmanNode::Leaf { word: T::default() }
+    }
 
+    fn insert(self:Box<Self>,word:T,bits:Bits,index:usize) -> Result<Box<Self>,UnCompressionError> {
         match *self {
-            HuffmanNode::Leaf { word: ref w} => {
-                lbits.push_bit(false);
-                rbits.push_bit(true);
+            HuffmanNode::Leaf { word: _} => {
+                if index >= bits.len {
+                    Ok(Box::new(HuffmanNode::Leaf { word: word }))
+                } else {
+                    let b = bits.get_bit(index)?;
 
-                let w = w.clone();
-
-                {
-                    let w = w.clone();
-                    let word = word.clone();
-
-                    dic.insert(w, lbits.clone());
-                    dic.insert(word, rbits.clone());
+                    Ok(if b == 0u8 {
+                        Box::new(HuffmanNode::Node {
+                            left: self.insert(word,bits,index+1)?,
+                            right: Box::new(HuffmanNode::empty())
+                        })
+                    } else {
+                        Box::new(HuffmanNode::Node {
+                            left: Box::new(HuffmanNode::empty()),
+                            right: self.insert(word,bits,index+1)?
+                        })
+                    })
                 }
-
-                Ok(Box::new(HuffmanNode::Node {
-                    left: Box::new(HuffmanNode::new(w)),
-                    right: Box::new(HuffmanNode::new(word))
-                }))
             },
             HuffmanNode::Node {
                 left: l,
                 right: r
             } => {
-                lbits.push_bit(true);
-                rbits.push_bit(true);
-
-                Ok(Box::new(HuffmanNode::Node {
-                    left: l,
-                    right: r.insert(word,lbits,rbits,dic)?
-                }))
+                if index < bits.len && bits.get_bit(index)? == 0 {
+                    Ok(Box::new(HuffmanNode::Node {
+                        left: l.insert(word,bits,index)?,
+                        right: r
+                    }))
+                } else if index < bits.len && bits.get_bit(index)? == 1 {
+                    Ok(Box::new(HuffmanNode::Node {
+                        left: l,
+                        right: r.insert(word,bits,index)?
+                    }))
+                } else {
+                    Err(UnCompressionError::from(ReadError::InvalidState(String::from("Huffman node status is invalid."))))
+                }
             }
         }
     }
 
     fn find_word<R>(&self,reader:&mut StreamReader<'_,R>) -> Result<&T,ReadError> where R: Read {
         match self {
-            &HuffmanNode::Leaf { ref word } => {
+            &HuffmanNode::Leaf { ref word} => {
                 Ok(word)
             },
             &HuffmanNode::Node { ref left, ref right } => {
@@ -95,6 +104,36 @@ impl<T> HuffmanNode<T> where T: Ord + Clone {
         }
     }
 }
+#[derive(Debug,Clone)]
+pub struct HuffmanItem<T> where T: Ord + Clone + Default {
+    node:HuffmanNode<T>,
+    score:Fraction
+}
+impl<T> HuffmanItem<T> where T: Ord + Clone + Default {
+    pub fn new(node:HuffmanNode<T>,score:Fraction) -> HuffmanItem<T> {
+        HuffmanItem {
+            node:node,
+            score:score
+        }
+    }
+}
+impl<T> Ord for HuffmanItem<T> where T: Ord + Clone + Default {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score.cmp(&other.score)
+            .then((&self.node as *const HuffmanNode<T> as usize).cmp(&(&other.node as *const HuffmanNode<T> as usize)))
+    }
+}
+impl<T> PartialOrd for HuffmanItem<T> where T: Ord + Clone + Default {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+impl<T> PartialEq for HuffmanItem<T> where T: Ord + Clone + Default {
+    fn eq(&self, other: &Self) -> bool {
+        &self.node as *const HuffmanNode<T> as usize == &other.node as *const HuffmanNode<T> as usize
+    }
+}
+impl<T> Eq for HuffmanItem<T> where T: Ord + Clone + Default {}
 #[derive(Clone)]
 pub struct Bits {
     len:usize,
@@ -150,38 +189,84 @@ impl Bits {
         Ok(())
     }
 }
-pub struct HuffmanTree<T> where T: Ord + Clone {
+pub struct HuffmanTree<T> where T: Ord + Clone + Default {
     root:Option<Box<HuffmanNode<T>>>,
     dic:BTreeMap<T,Bits>
 }
-impl<T> HuffmanTree<T> where T: Ord + Clone {
-    pub fn new() -> HuffmanTree<T> {
+impl<T> HuffmanTree<T> where T: Ord + Clone + Default {
+    pub fn new(words:Vec<(T,Fraction)>) -> HuffmanTree<T> {
+        let mut queue = BinaryHeap::new();
+
+        for (w,s) in words {
+            queue.push(HuffmanItem::new(HuffmanNode::Leaf { word: w },s));
+        }
+
+        while queue.len() > 1 {
+            let l = queue.pop().unwrap();
+            let r = queue.pop().unwrap();
+
+            let score = l.score + r.score;
+
+            queue.push(HuffmanItem::new(HuffmanNode::Node {
+                left: Box::new(l.node),
+                right: Box::new(r.node)
+            }, score))
+        }
+
+        let mut r = HuffmanTree {
+            root: queue.pop().map(|item| Box::new(item.node)),
+            dic: BTreeMap::new()
+        };
+
+        let mut dic = BTreeMap::new();
+
+        r.root.as_ref().map(|root| {
+            Self::build_dic(&mut dic, root, Bits::new());
+        });
+
+        r.dic = dic;
+
+        r
+    }
+
+    pub fn empty() -> HuffmanTree<T> {
         HuffmanTree {
             root: None,
             dic: BTreeMap::new()
         }
     }
 
-    pub fn insert(&mut self, word: T) -> Result<(),WriteError> {
-        if !self.dic.contains_key(&word) {
-            let root = self.root.take();
+    fn build_dic(dic:&mut BTreeMap<T,Bits>, node: &Box<HuffmanNode<T>>, bits:Bits) {
+        match &node.deref() {
+            &HuffmanNode::Leaf { word } => {
+                dic.insert(word.clone(),bits);
+            },
+            &HuffmanNode::Node {
+                left,
+                right
+            } => {
+                let mut lbits = bits.clone();
+                let mut rbits = bits.clone();
 
-            if let Some(r) = root {
-                let lbits = Bits::new();
-                let rbits = Bits::new();
+                lbits.push_bit(false);
+                rbits.push_bit(true);
 
-                self.root = Some(r.insert(word,lbits,rbits,&mut self.dic)?);
-            } else {
-                self.root = Some(Box::new(HuffmanNode::new(word.clone())));
-
-                let mut bits = Bits::new();
-
-                bits.push_bit(false);
-
-                self.dic.insert(word,bits);
+                Self::build_dic(dic,&left,lbits);
+                Self::build_dic(dic,&right,rbits);
             }
         }
+    }
 
+    pub fn insert(&mut self,word:T,bits:Bits) -> Result<(),UnCompressionError> {
+        if let Some(root) = self.root.take() {
+            self.root = Some(root.insert(word,bits,0)?);
+        } else {
+            let mut root = Box::new(HuffmanNode::empty());
+
+            root = root.insert(word,bits,0)?;
+
+            self.root = Some(root);
+        }
         Ok(())
     }
 
@@ -193,10 +278,10 @@ impl<T> HuffmanTree<T> where T: Ord + Clone {
         }
     }
 
-    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:T) -> Result<(),WriteError> where W: Write {
+    pub fn write<'b,W>(&self,writer:&mut StreamWriter<'b,W>,word:T) -> Result<(),CompressionError> where W: Write {
         self.dic.get(&word)
-            .ok_or(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary.")))
-            .and_then(|bits | bits.write(writer))
+            .ok_or(CompressionError::from(WriteError::InvalidState(String::from("No corresponding entry was found in the dictionary."))))
+            .and_then(|bits | Ok(bits.write(writer)?))
     }
 
     pub fn words(&self) -> Vec<&T> {
@@ -205,6 +290,10 @@ impl<T> HuffmanTree<T> where T: Ord + Clone {
         } else {
             Vec::new()
         }
+    }
+
+    pub fn get_bits(&self,word:&T) -> Option<&Bits> {
+        self.dic.get(word)
     }
 
     pub fn len(&self) -> usize {

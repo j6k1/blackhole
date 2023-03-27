@@ -5,7 +5,6 @@ use std::io::Write;
 use std::io::Read;
 use crate::error::{ReadError, CompressionError, UnCompressionError};
 use crate::huffman::{Bits, HuffmanTree};
-use crate::num::Fraction;
 use crate::stream::{StreamReader, StreamWriter};
 
 pub mod error;
@@ -13,10 +12,33 @@ pub mod stream;
 pub mod huffman;
 pub mod num;
 
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub struct Score {
+    word_len:usize,
+    count:usize
+}
+impl Score {
+    pub fn new(word_len:usize,count:usize) -> Score {
+        Score {
+            word_len,
+            count
+        }
+    }
+}
+impl Ord for Score {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.word_len.cmp(&other.word_len).reverse().then(self.count.cmp(&other.count).reverse())
+    }
+}
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(&other))
+    }
+}
 #[derive(Debug)]
 pub struct Word {
     word:Vec<u8>,
-    score:Fraction,
+    score:Score,
     positions: BTreeSet<(usize,usize)>
 }
 impl Word {
@@ -27,22 +49,22 @@ impl Word {
             positions.insert((s,e));
         }
 
-        let word_len = word.len() as u64;
+        let word_len = word.len();
 
         Word {
             word: word,
-            score: Fraction::new(1) / word_len * list.len() as u64 / (word_len + list.len() as u64),
+            score: Score::new(word_len,list.len()),
             positions: positions
         }
     }
 
-    pub fn score(&self) -> Fraction {
+    pub fn score(&self) -> Score {
         self.score
     }
 }
 impl Ord for Word {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score).then(self.word.cmp(&other.word).reverse())
+        self.score.cmp(&other.score).reverse().then(self.word.cmp(&other.word).reverse())
     }
 }
 impl PartialOrd for Word {
@@ -148,7 +170,7 @@ impl BlackHole {
         let mut current_size = 0;
 
         'outer: for w in words.into_iter() {
-            let mut contains = false;
+            let mut used_count = 0;
 
             for &(s,e) in w.positions.iter() {
                 if current_size >= size {
@@ -165,9 +187,7 @@ impl BlackHole {
                     start_to_end_map.insert(s,e-1);
                     end_to_start_map.insert(e-1,s);
 
-                    if w.word.len() > 1 {
-                        contains = true;
-                    }
+                    used_count += 1;
 
                     current_size += w.word.len();
 
@@ -175,8 +195,8 @@ impl BlackHole {
                 }
             }
 
-            if contains {
-                used_words.push((w.word.clone(),w.score()));
+            if used_count > 0 {
+                used_words.push((w.word.clone(),used_count));
             }
         }
 

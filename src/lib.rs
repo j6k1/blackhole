@@ -134,7 +134,7 @@ impl BlackHole {
                     acc.entry(data[l..(r+1)].to_vec()).or_insert(Vec::new()).push((l,r+1));
                     acc
                 }).into_iter().filter(|(_,next_list)| {
-                    next_list.len() > 1 && next_list.len() + word.len() + 1 <= list.len() + word.len()
+                    next_list.len() + word.len() + 1 <= list.len() + word.len()
                 }).fold(BTreeMap::new(),| mut acc,(k,v)| {
                     acc.insert(k,v);
                     acc

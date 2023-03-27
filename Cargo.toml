@@ -1,14 +1,14 @@
 [package]
-name = "blackhole-compression"
+name = "blackhole-compress"
 version = "0.1.0"
 edition = "2021"
 authors = ["jinpu <nanasi18@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 description = "Library for data compression"
-documentation = "https://docs.rs/blackhole-compression/"
-homepage = "https://crates.io/crates/blackhole-compression"
-repository = "https://github.com/j6k1/blackhole-compression"
+documentation = "https://docs.rs/blackhole-compress/"
+homepage = "https://crates.io/crates/blackhole-compress"
+repository = "https://github.com/j6k1/blackhole-compress"
 readme = "README.md"
 keywords = ["compress"]
 categories = []

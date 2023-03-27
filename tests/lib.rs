@@ -1,4 +1,4 @@
-extern crate blackhole_compression;
+extern crate blackhole_compress;
 
 use std::fs::File;
 use std::io::{Read,BufReader};

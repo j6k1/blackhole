@@ -64,7 +64,7 @@ impl Word {
 }
 impl Ord for Word {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score).reverse().then(self.word.cmp(&other.word).reverse())
+        self.score.cmp(&other.score).then(self.word.cmp(&other.word).reverse())
     }
 }
 impl PartialOrd for Word {

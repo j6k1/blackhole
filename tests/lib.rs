@@ -1,11 +1,10 @@
-extern crate blackhole;
+extern crate blackhole_compression;
 
 use std::fs::File;
 use std::io::{Read,BufReader};
 use std::ops::Deref;
-
-use blackhole::stream::*;
-use blackhole::BlackHole;
+use blackhole_compression::BlackHole;
+use blackhole_compression::stream::{StreamReader, StreamWriter};
 
 #[test]
 fn compression_and_uncompression() {

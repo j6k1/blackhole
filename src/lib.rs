@@ -51,7 +51,7 @@ pub struct Word {
     positions: BTreeSet<(usize,usize)>
 }
 impl Word {
-    pub fn new(word:Vec<u8>, list: &[(usize,usize)]) -> Word {
+    pub fn new(word:Vec<u8>, list: &[(usize,usize)], count:usize) -> Word {
         let mut positions = BTreeSet::new();
 
         for &(s,e) in list.iter() {
@@ -62,7 +62,7 @@ impl Word {
 
         Word {
             word: word,
-            score: Score::new(word_len,list.len()),
+            score: Score::new(word_len,count),
             positions: positions
         }
     }
@@ -124,7 +124,8 @@ impl BlackHole {
         });
 
         for (word,list) in dic.iter() {
-            words.insert(Word::new(word.clone(), &list));
+            let count = list.len();
+            words.insert(Word::new(word.clone(), &list, count));
         }
 
         let data = Arc::new(data);
@@ -134,15 +135,11 @@ impl BlackHole {
             let data = Arc::clone(&data);
 
             let (d,mut w) = dic.into_par_iter()
-                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (word, list) | {
+                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (_, list) | {
 
                 let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
 
-                let mut d = list.par_iter().zip(next_iter).filter(|(a,b)| {
-                    a.1 <= b.0
-                }).map(|(a,_)| {
-                    a
-                }).filter(|&&(_,r)| {
+                let mut d = list.par_iter().filter(|&&(_,r)| {
                     r  < len
                 }).fold(|| BTreeMap::new(), | mut acc,&(l,r) | {
                     acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
@@ -151,7 +148,7 @@ impl BlackHole {
                     acc.append(&mut t);
                     acc
                 }).into_par_iter().filter(|(_,next_list)| {
-                    next_list.len() + word.len() + 1 <= list.len() + word.len()
+                    next_list.len() + 1 < list.len()
                 }).fold(|| BTreeMap::new(),| mut acc,(k,v)| {
                     acc.insert(k,v);
                     acc
@@ -160,8 +157,12 @@ impl BlackHole {
                     acc
                 });
 
+                let count =  list.par_iter().zip(next_iter).filter(|(a,b)| {
+                    a.1 < b.0
+                }).count();
+
                 for (word,list) in d.iter() {
-                    words.insert(Word::new(word.clone(), list));
+                    words.insert(Word::new(word.clone(), list, count));
                 }
 
                 dic.append(&mut d);

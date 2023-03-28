@@ -135,22 +135,14 @@ impl BlackHole {
             let data = Arc::clone(&data);
 
             let (d,mut w) = dic.into_par_iter()
-                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (_, list) | {
+                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (word, list) | {
 
                 let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
 
-                let mut d = list.par_iter().filter(|&&(_,r)| {
-                    r  < len
+                let mut d = list.par_iter().filter(|&&(l,r)| {
+                    r  < len && r - l - 1 > 0 && (word.len() * list.len() * list.len() / (r - l - 1) / (r - l - 1) <= r - l - 1)
                 }).fold(|| BTreeMap::new(), | mut acc,&(l,r) | {
                     acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
-                    acc
-                }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
-                    acc.append(&mut t);
-                    acc
-                }).into_par_iter().filter(|(_,next_list)| {
-                    next_list.len() + 1 < list.len()
-                }).fold(|| BTreeMap::new(),| mut acc,(k,v)| {
-                    acc.insert(k,v);
                     acc
                 }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
                     acc.append(&mut t);

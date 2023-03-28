@@ -15,5 +15,6 @@ categories = []
 license = "MIT"
 
 [dependencies]
+rayon = "1.7.0"
 [profile.test]
 opt-level = 3

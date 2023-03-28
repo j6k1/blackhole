@@ -1,8 +1,17 @@
+extern crate rayon;
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::io::Write;
 use std::io::Read;
+use std::sync::Arc;
+
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelRefIterator;
+
 use crate::error::{ReadError, CompressionError, UnCompressionError};
 use crate::huffman::{Bits, HuffmanTree};
 use crate::stream::{StreamReader, StreamWriter};
@@ -118,25 +127,36 @@ impl BlackHole {
             words.insert(Word::new(word.clone(), &list));
         }
 
+        let data = Arc::new(data);
+        let len = data.len();
+
         while dic.len() > 0 {
-            let (d,w) = dic.into_iter()
-                .fold((BTreeMap::new(),words), | (mut dic, mut words), (word, list) | {
+            let data = Arc::clone(&data);
 
-                let next_iter = list.iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_iter());
+            let (d,mut w) = dic.into_par_iter()
+                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (word, list) | {
 
-                let mut d = list.iter().zip(next_iter).filter(|&(a,b)| {
+                let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
+
+                let mut d = list.par_iter().zip(next_iter).filter(|(a,b)| {
                     a.1 <= b.0
                 }).map(|(a,_)| {
                     a
                 }).filter(|&&(_,r)| {
-                    r  < data.len()
-                }).fold(BTreeMap::new(), | mut acc,&(l,r) | {
-                    acc.entry(data[l..(r+1)].to_vec()).or_insert(Vec::new()).push((l,r+1));
+                    r  < len
+                }).fold(|| BTreeMap::new(), | mut acc,&(l,r) | {
+                    acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
                     acc
-                }).into_iter().filter(|(_,next_list)| {
+                }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
+                    acc.append(&mut t);
+                    acc
+                }).into_par_iter().filter(|(_,next_list)| {
                     next_list.len() + word.len() + 1 <= list.len() + word.len()
-                }).fold(BTreeMap::new(),| mut acc,(k,v)| {
+                }).fold(|| BTreeMap::new(),| mut acc,(k,v)| {
                     acc.insert(k,v);
+                    acc
+                }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
+                    acc.append(&mut t);
                     acc
                 });
 
@@ -147,10 +167,15 @@ impl BlackHole {
                 dic.append(&mut d);
 
                 (dic,words)
+            }).reduce(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (mut d, mut w) | {
+                dic.append(&mut d);
+                words.append(&mut w);
+
+                (dic,words)
             });
 
+            words.append(&mut w);
             dic = d;
-            words = w;
         }
 
         Ok((words,data.len()))

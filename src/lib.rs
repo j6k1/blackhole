@@ -140,7 +140,8 @@ impl BlackHole {
                 let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
 
                 let mut d = list.par_iter().filter(|&&(l,r)| {
-                    r  < len && r - l - 1 > 0 && (word.len() * list.len() * list.len() / (r - l - 1) / (r - l - 1) <= r - l - 1)
+                    let size = word.len() * list.len() * list.len();
+                    r  < len && r - l - 1 > 0 && (size / (r - l - 1) / (r - l - 1) <= (r - l - 1) / size)
                 }).fold(|| BTreeMap::new(), | mut acc,&(l,r) | {
                     acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
                     acc

@@ -33,10 +33,16 @@ impl Score {
             count
         }
     }
+
+    pub fn value(&self) -> u128 {
+        self.word_len as u128 * self.count as u128 * self.count as u128
+    }
 }
 impl Ord for Score {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.word_len.cmp(&other.word_len).reverse().then(self.count.cmp(&other.count).reverse())
+        (self.word_len as u128 * self.count as u128 * self.count as u128).cmp(
+            &(other.word_len as u128 * other.count as u128 * other.count as u128)
+        ).reverse()
     }
 }
 impl PartialOrd for Score {
@@ -215,7 +221,7 @@ impl BlackHole {
             }
 
             if used_count > 0 {
-                used_words.push((w.word.clone(),used_count));
+                used_words.push((w.word.clone(),Score::new(w.word.len(),used_count)));
             }
         }
 

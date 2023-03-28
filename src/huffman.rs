@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::ops::Deref;
 use crate::error::{CompressionError, ReadError, UnCompressionError, WriteError};
+use crate::Score;
 use crate::stream::{StreamReader, StreamWriter};
 
 #[derive(Debug,Clone)]
@@ -195,11 +196,11 @@ pub struct HuffmanTree<T> where T: Ord + Clone + Default + Debug {
     dic:BTreeMap<T,Bits>
 }
 impl<T> HuffmanTree<T> where T: Ord + Clone + Default + Debug {
-    pub fn new(words:Vec<(T,usize)>) -> HuffmanTree<T> {
+    pub fn new(words:Vec<(T,Score)>) -> HuffmanTree<T> {
         let mut queue = BinaryHeap::new();
 
         for (w,s) in words {
-            queue.push(HuffmanItem::new(HuffmanNode::Leaf { word: w },s));
+            queue.push(HuffmanItem::new(HuffmanNode::Leaf { word: w },s.count));
         }
 
         while queue.len() > 1 {

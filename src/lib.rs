@@ -35,13 +35,17 @@ impl Score {
     }
 
     pub fn value(&self) -> u128 {
-        self.word_len as u128 * self.count as u128 * self.count as u128
+        self.word_len as u128 * self.count as u128 - self.count as u128
+    }
+
+    pub fn count(&self) -> usize {
+        self.count
     }
 }
 impl Ord for Score {
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.word_len as u128 * self.count as u128 * self.count as u128).cmp(
-            &(other.word_len as u128 * other.count as u128 * other.count as u128)
+        (self.word_len as u128 * self.count as u128 - self.count as u128).cmp(
+            &(other.word_len as u128 * other.count as u128 - other.count as u128)
         ).reverse()
     }
 }
@@ -124,14 +128,15 @@ impl BlackHole {
             }
         }
 
-        let mut dic = list.iter().fold(BTreeMap::new(), | mut acc,&(l,r) | {
-            acc.entry(data[l..r].to_vec()).or_insert(Vec::new()).push((l,r));
+        let count = list.len();
+
+        let mut dic = list.iter().fold(BTreeMap::new(), | mut acc, &(l,r) | {
+            acc.entry(data[l..r].to_vec()).or_insert((Vec::new(),count)).0.push((l,r));
             acc
         });
 
-        for (word,list) in dic.iter() {
-            let count = list.len();
-            words.insert(Word::new(word.clone(), &list, count));
+        for (word,(list,count)) in dic.iter() {
+            words.insert(Word::new(word.clone(), list, *count));
         }
 
         let data = Arc::new(data);
@@ -141,32 +146,55 @@ impl BlackHole {
             let data = Arc::clone(&data);
 
             let (d,mut w) = dic.into_par_iter()
-                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (word, list) | {
+                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (_, (list,_)) | {
 
                 let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
 
-                let mut d = list.par_iter().filter(|&&(l,r)| {
-                    let size = word.len() * list.len() * list.len();
-                    r  < len && r - l - 1 > 0 && (size / (r - l - 1) / (r - l - 1) <= (r - l - 1) / size)
-                }).fold(|| BTreeMap::new(), | mut acc,&(l,r) | {
-                    acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
-                    acc
-                }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
-                    acc.append(&mut t);
-                    acc
-                });
+                let mut count =  list.par_iter().step_by(2)
+                    .zip(next_iter.step_by(2))
+                    .fold(|| 0, | mut acc, (a,b) | {
+                        if a.0 < b.0 {
+                          acc += 2;
+                        } else {
+                          acc += 1;
+                        }
+                        acc
+                    }).reduce(|| 0, | acc, count | {
+                        acc + count
+                    });
 
-                let count =  list.par_iter().zip(next_iter).filter(|(a,b)| {
-                    a.1 < b.0
-                }).count();
-
-                for (word,list) in d.iter() {
-                    words.insert(Word::new(word.clone(), list, count));
+                if list.len() % 2 == 1 && list.last().unwrap_or(&(0,0)).1 < len {
+                    count += 1;
                 }
 
-                dic.append(&mut d);
+                const WINDOW_SIZE_SQRT:usize = 32;
 
-                (dic,words)
+                if count < WINDOW_SIZE_SQRT {
+                    (dic,words)
+                } else {
+                    let mut d = list.par_iter().filter(|&&(_, r)| {
+                        r < len
+                    }).fold(|| BTreeMap::new(), | mut acc, &(l, r) | {
+                        acc.entry(data[l..(r + 1)].to_vec()).or_insert((Vec::new(),count)).0.push((l, r + 1));
+                        acc
+                    }).reduce(|| BTreeMap::new(), | mut acc, dic | {
+                        dic.into_iter().fold(BTreeMap::new(), | mut m, (k,mut v) | {
+                            if let Some(e) = acc.get_mut(&k) {
+                                v.0.append(&mut e.0);
+                            }
+                            m.insert(k,v);
+                            m
+                        })
+                    });
+
+                    for (word, (list,count)) in d.iter() {
+                        words.insert(Word::new(word.clone(), list, *count));
+                    }
+
+                    dic.append(&mut d);
+
+                    (dic, words)
+                }
             }).reduce(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (mut d, mut w) | {
                 dic.append(&mut d);
                 words.append(&mut w);

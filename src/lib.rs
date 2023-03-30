@@ -145,7 +145,7 @@ impl BlackHole {
             let data = Arc::clone(&data);
 
             const MIN_COUNT:usize = 2;
-            const MAX_WORD_SIZE:usize = 32;
+            const MAX_WORD_SIZE:usize = 64;
 
             let (d,mut w) = dic.into_par_iter()
                 .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (_, (list,_)) | {

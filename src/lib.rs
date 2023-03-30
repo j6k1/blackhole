@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 
 use crate::error::{ReadError, CompressionError, UnCompressionError};
@@ -145,46 +144,57 @@ impl BlackHole {
         while dic.len() > 0 {
             let data = Arc::clone(&data);
 
+            const MIN_COUNT:usize = 2;
+            const MAX_WORD_SIZE:usize = 512;
+
             let (d,mut w) = dic.into_par_iter()
-                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (_, (list,_)) | {
+                .fold(|| (BTreeMap::new(),BTreeSet::new()), | (mut dic, mut words), (word, (list,_)) | {
 
-                let next_iter = list.par_iter().copied().skip(1).chain(vec![(data.len(),data.len())].into_par_iter());
-
-                let mut count =  list.par_iter().step_by(2)
-                    .zip(next_iter.step_by(2))
-                    .fold(|| 0, | mut acc, (a,b) | {
-                        if a.0 < b.0 {
-                          acc += 2;
-                        } else {
-                          acc += 1;
-                        }
-                        acc
-                    }).reduce(|| 0, | acc, count | {
-                        acc + count
-                    });
-
-                if list.len() % 2 == 1 && list.last().unwrap_or(&(0,0)).1 < len {
-                    count += 1;
-                }
-
-                const WINDOW_SIZE_SQRT:usize = 32;
-
-                if count < WINDOW_SIZE_SQRT {
+                if count < MIN_COUNT || word.len() >= MAX_WORD_SIZE {
                     (dic,words)
                 } else {
                     let mut d = list.par_iter().filter(|&&(_, r)| {
                         r < len
                     }).fold(|| BTreeMap::new(), | mut acc, &(l, r) | {
-                        acc.entry(data[l..(r + 1)].to_vec()).or_insert((Vec::new(),count)).0.push((l, r + 1));
+                        acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
                         acc
                     }).reduce(|| BTreeMap::new(), | mut acc, dic | {
-                        dic.into_iter().fold(BTreeMap::new(), | mut m, (k,mut v) | {
-                            if let Some(e) = acc.get_mut(&k) {
-                                v.0.append(&mut e.0);
-                            }
-                            m.insert(k,v);
+                        acc.append(&mut dic.into_par_iter().fold(|| BTreeMap::new(), | mut m, (k,mut v) | {
+                            m.entry(k).or_insert(Vec::new()).append(&mut v);
                             m
-                        })
+                        }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
+                            acc.append(&mut t);
+                            acc
+                        }));
+                        acc
+                    }).into_par_iter().map(|(k,v)| {
+                        let mut count = 0;
+
+                        let mut skip = false;
+                        let mut cr = 0;
+
+                        for &(l,r) in v.iter() {
+                            if skip {
+                                if cr <= l {
+                                    skip = false;
+                                }
+                            } else if cr > l {
+                                skip = true;
+                            }
+
+                            if !skip {
+                                count += 1;
+                                cr = r;
+                            }
+                        }
+
+                        (k,(v,count))
+                    }).fold(|| BTreeMap::new(), | mut acc, (k,v) | {
+                        acc.insert(k,v);
+                        acc
+                    }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
+                        acc.append(&mut t);
+                        acc
                     });
 
                     for (word, (list,count)) in d.iter() {

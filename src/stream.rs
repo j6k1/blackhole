@@ -122,6 +122,11 @@ impl<'a,R> StreamReader<'a,R> where R: Read +'a {
 
         Ok(())
     }
+
+    pub fn skip_surplus_bits(&mut self) {
+        self.current_index += 1;
+        self.current_bits = 0;
+    }
 }
 pub struct StreamWriter<'a,W> where W: Write +'a {
     writer:&'a mut W,

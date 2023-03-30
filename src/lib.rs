@@ -144,7 +144,7 @@ impl BlackHole {
         while dic.len() > 0 {
             let data = Arc::clone(&data);
 
-            const MIN_COUNT:usize = 2;
+            const MIN_COUNT:usize = 8;
             const MAX_WORD_SIZE:usize = 64;
 
             let (d,mut w) = dic.into_par_iter()

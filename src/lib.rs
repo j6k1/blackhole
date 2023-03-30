@@ -155,15 +155,11 @@ impl BlackHole {
                 }).fold(|| BTreeMap::new(), | mut acc, &(l, r) | {
                     acc.entry(data[l..(r + 1)].to_vec()).or_insert(Vec::new()).push((l, r + 1));
                     acc
-                }).reduce(|| BTreeMap::new(), | mut acc, dic | {
-                    acc.append(&mut dic.into_par_iter().fold(|| BTreeMap::new(), | mut m, (k,mut v) | {
-                        m.entry(k).or_insert(Vec::new()).append(&mut v);
-                        m
-                    }).reduce(|| BTreeMap::new(), | mut acc, mut t | {
-                        acc.append(&mut t);
+                }).reduce(|| BTreeMap::new(), | acc, dic | {
+                    dic.into_iter().fold(acc, | mut acc, (k,mut v) | {
+                        acc.entry(k).or_insert(Vec::new()).append(&mut v);
                         acc
-                    }));
-                    acc
+                    })
                 }).into_par_iter().map(|(k,v)| {
                     let mut count = 0;
 

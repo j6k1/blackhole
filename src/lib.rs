@@ -127,10 +127,10 @@ impl BlackHole {
             }
         }
 
-        let count = list.len();
-
         let mut dic = list.iter().fold(BTreeMap::new(), | mut acc, &(l,r) | {
-            acc.entry(data[l..r].to_vec()).or_insert((Vec::new(),count)).0.push((l,r));
+            let count = acc.get(&data[l..r].to_vec()).map(|(_,count)| *count).unwrap_or(0);
+
+            acc.entry(data[l..r].to_vec()).or_insert((Vec::new(),count + 1)).0.push((l,r));
             acc
         });
 

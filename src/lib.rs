@@ -43,9 +43,7 @@ impl Score {
 }
 impl Ord for Score {
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.word_len as u128 * self.count as u128 - self.count as u128).cmp(
-            &(other.word_len as u128 * other.count as u128 - other.count as u128)
-        ).reverse()
+        (self.word_len).cmp(&other.word_len).then(self.count.cmp(&other.count)).reverse()
     }
 }
 impl PartialOrd for Score {
@@ -264,6 +262,7 @@ impl BlackHole {
         for (_,w) in seq.into_iter() {
             r.push(w);
         }
+
         Ok((r,huffman_tree))
     }
 
